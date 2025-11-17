@@ -1,0 +1,75 @@
+templates:
+  - name: add_feedback_gate
+    weight: 1.2
+    conditions:
+      requires_ssm_block: true
+    actions:
+      - add_extra:
+          selector: random_ssm
+          extra_type: feedback
+          params:
+            strength: 0.15
+
+  - name: insert_ssm_block
+    weight: 1.0
+    actions:
+      - insert_block:
+          position: random
+          block_template: ssm_dense
+
+  - name: convert_dense_to_moe
+    weight: 1.0
+    conditions:
+      requires_dense_ffn: true
+    actions:
+      - replace_ffn:
+          selector: random_dense
+          new_type: moe
+          n_experts: 16
+          k: 2
+          balance: 0.05
+
+  - name: random_block_splice
+    weight: 0.8
+    conditions:
+      min_blocks: 3
+    actions:
+      - remove_block:
+          selector: random
+      - insert_block:
+          position: random
+          block_template: retro_moe
+
+  - name: add_gated_mix
+    weight: 0.9
+    actions:
+      - add_extra:
+          selector: random
+          extra_type: gated
+          params:
+            targets: ["attn", "ffn", "ssm"]
+            init_weight: 0.2
+
+  - name: inject_feedback_loop
+    weight: 1.1
+    conditions:
+      min_blocks: 2
+    actions:
+      - add_extra:
+          selector: random
+          extra_type: feedback
+          params:
+            strength: 0.12
+      - add_extra:
+          selector: random
+          extra_type: gated
+          params:
+            targets: ["attn", "ffn"]
+            init_weight: 0.25
+
+  - name: insert_feedback_block
+    weight: 0.7
+    actions:
+      - insert_block:
+          position: random
+          block_template: feedback_dense

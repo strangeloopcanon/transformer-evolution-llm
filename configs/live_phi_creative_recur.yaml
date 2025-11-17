@@ -1,0 +1,164 @@
+model:
+  name: phi-tiny-evo-recur
+  emb:
+    dim: 512
+    vocab: 50257
+  blocks:
+    - attn:
+        kind: GQA
+        heads: 8
+        head_dim: 64
+        rope: yarn
+        rope_theta: 13000
+        sw: 128
+        kv_groups: 2
+        sparsity: local_global
+        global_stride: 48
+      ffn:
+        type: dense
+        hidden: 2048
+        activation: swiglu
+      extras:
+        - type: retro
+          memory_tokens: 256
+          stride: 32
+          aggregator: gate
+          gating_weight: 0.25
+    - attn:
+        kind: GQA
+        heads: 8
+        head_dim: 64
+        rope: yarn
+        sw: 128
+        kv_groups: 2
+        sparsity: local_block
+        block_size: 64
+        block_stride: 128
+      ffn:
+        type: dense
+        hidden: 2048
+        activation: swiglu
+      ssm:
+        kind: mamba2
+        d_state: 16
+        d_conv: 4
+        dt_rank: 8
+        chunk: 128
+        gate: 0.15
+    - attn:
+        kind: GQA
+        heads: 8
+        head_dim: 64
+        rope: yarn
+        sw: 128
+        kv_groups: 2
+        sparsity: dilated
+        dilation: 3
+      ffn:
+        type: moe
+        hidden: 2048
+        n_experts: 16
+        k: 2
+        capacity_factor: 1.3
+        balance: 0.05
+        shared: 1
+      extras:
+        - type: retro
+          memory_tokens: 1024
+          stride: 64
+          aggregator: gate
+          gating_weight: 0.35
+    - attn:
+        kind: GQA
+        heads: 8
+        head_dim: 64
+        rope: yarn
+        sw: 128
+        kv_groups: 2
+        sparsity: local_global
+        global_stride: 48
+      ffn:
+        type: dense
+        hidden: 2048
+        activation: swiglu
+      extras:
+        - type: retro
+          memory_tokens: 2048
+          stride: 64
+          aggregator: gate
+          gating_weight: 0.3
+    - attn:
+        kind: GQA
+        heads: 8
+        head_dim: 64
+      ffn:
+        type: dense
+        hidden: 2048
+        activation: swiglu
+  head:
+    tie_embeddings: true
+    vocab: 50257
+  norm: rmsnorm
+  recurrences:
+    - start: 1
+      end: 4
+      adapter: gated
+      concat_prelude: true
+      init_state: zeros
+      train_recurrence: 1
+      max_train_recurrence: 4
+      curriculum_fraction: 0.3
+      test_recurrences: [1, 2, 4, 8, 16]
+train:
+  lr: 0.0008
+  warmup: 500
+  clip: 1.0
+  bf16: true
+  grad_ckpt: true
+  max_tokens: 520000
+  weight_decay: 0.02
+  seed: 4242
+  router_lb_coeff: 0.01
+  router_entropy_coeff: 0.005
+  optimizer:
+    name: adamw
+data:
+  tokenizer: gpt2
+  hf_revision: main
+  seq_len: 512
+  batch_size: 1
+  workers: 0
+  shards:
+    - name: codeparrot/github-code-clean
+      split: train
+      weight: 0.4
+    - name: wikitext
+      split: wikitext-2-raw-v1
+      weight: 0.35
+    - name: ag_news
+      split: train
+      weight: 0.25
+  healing_shards:
+    - name: ag_news
+      split: train
+      weight: 1.0
+  healing_tokens: 200000
+evolution:
+  rung0_thresholds:
+    gate_entropy_min: 0.8
+    gate_entropy_max: 3.5
+  rung1_tokens: 180000
+  rung2_tokens: 520000
+  population: 16
+  topk_keep: 0.5
+  crossover_prob: 0.4
+  parent_selection: lexicase
+  pareto_objectives:
+    - ppl_code
+    - ppl_math
+    - long_recall
+    - throughput
+    - ram
+    - layers
+    - moe_blocks
+    - novelty

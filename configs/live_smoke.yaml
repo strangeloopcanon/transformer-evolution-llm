@@ -1,0 +1,64 @@
+model:
+  name: smoke-live
+  emb:
+    dim: 128
+    vocab: 50257
+  blocks:
+    - attn:
+        kind: GQA
+        heads: 4
+        head_dim: 32
+      ffn:
+        type: dense
+        hidden: 512
+        activation: silu
+    - attn:
+        kind: GQA
+        heads: 4
+        head_dim: 32
+      ffn:
+        type: moe
+        hidden: 512
+        n_experts: 4
+        k: 1
+        capacity_factor: 1.1
+        balance: 0.05
+        shared: 1
+      extras:
+        - type: retro
+          memory_tokens: 64
+          stride: 16
+          aggregator: gate
+          gating_weight: 0.25
+  head:
+    tie_embeddings: true
+    vocab: 50257
+train:
+  lr: 0.001
+  warmup: 10
+  clip: 1.0
+  bf16: false
+  grad_ckpt: false
+  max_tokens: 8192
+  weight_decay: 0.01
+  seed: 7
+data:
+  tokenizer: sshleifer/tiny-gpt2
+  hf_revision: main
+  seq_len: 64
+  batch_size: 1
+  workers: 0
+  shards:
+    - name: ag_news
+      split: train
+      weight: 1.0
+evolution:
+  rung1_tokens: 2048
+  rung2_tokens: 4096
+  population: 4
+  topk_keep: 0.5
+  crossover_prob: 0.5
+  pareto_objectives:
+    - ppl_code
+    - throughput
+    - ram

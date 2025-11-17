@@ -1,0 +1,176 @@
+model:
+  name: phi-tiny-evo-creative
+  emb:
+    dim: 512
+    vocab: 50257
+    rope: null
+    dropout: 0.0
+  blocks:
+  - name: null
+    attn:
+      kind: GQA
+      heads: 8
+      head_dim: 64
+      rope: yarn
+      sw: 128
+      kv_groups: 2
+      dropout: 0.0
+      qk_norm_max: null
+      sparsity: local_global
+      block_size: null
+      block_stride: null
+      global_stride: 64
+    ffn:
+      type: dense
+      hidden: 2048
+      activation: swiglu
+      dropout: 0.0
+    ssm: null
+    extras:
+    - type: retro
+      memory_tokens: 256
+      stride: 32
+      aggregator: gate
+      gating_weight: 0.25
+  - name: null
+    attn:
+      kind: GQA
+      heads: 8
+      head_dim: 64
+      rope: null
+      sw: null
+      kv_groups: null
+      dropout: 0.0
+      qk_norm_max: null
+      sparsity: none
+      block_size: null
+      block_stride: null
+      global_stride: null
+    ffn:
+      type: moe
+      hidden: 2048
+      n_experts: 16
+      k: 4
+      capacity_factor: 1.3021836853265325
+      balance: 0.05
+      shared: 1
+      router_temperature: null
+    ssm: null
+    extras:
+    - type: custom
+      name: exp-gater
+      params:
+        dim: 256
+  - name: null
+    attn:
+      kind: GQA
+      heads: 8
+      head_dim: 64
+      rope: null
+      sw: null
+      kv_groups: null
+      dropout: 0.0
+      qk_norm_max: null
+      sparsity: none
+      block_size: null
+      block_stride: null
+      global_stride: null
+    ffn:
+      type: dense
+      hidden: 2048
+      activation: swiglu
+      dropout: 0.0
+    ssm: null
+    extras:
+    - type: retro
+      memory_tokens: 1024
+      stride: 64
+      aggregator: gate
+      gating_weight: 0.35
+  - name: null
+    attn:
+      kind: GQA
+      heads: 8
+      head_dim: 64
+      rope: null
+      sw: null
+      kv_groups: null
+      dropout: 0.0
+      qk_norm_max: null
+      sparsity: none
+      block_size: null
+      block_stride: null
+      global_stride: null
+    ffn:
+      type: dense
+      hidden: 2048
+      activation: swiglu
+      dropout: 0.0
+    ssm: null
+    extras:
+    - type: retro
+      memory_tokens: 1024
+      stride: 64
+      aggregator: gate
+      gating_weight: 0.35
+  head:
+    tie_embeddings: true
+    vocab: 50257
+train:
+  lr: 0.0008
+  warmup: 500
+  clip: 1.0
+  bf16: true
+  grad_checkpoint: true
+  max_tokens: 520000
+  weight_decay: 0.02
+  seed: 4242
+  router_lb_coeff: 0.01
+  router_entropy_coeff: 0.005
+  optimizer:
+    name: adamw
+    lr: null
+    betas: null
+    eps: null
+    weight_decay: null
+data:
+  tokenizer: gpt2
+  hf_revision: main
+  seq_len: 512
+  batch_size: 1
+  workers: 0
+  shards:
+  - name: ag_news
+    split: train
+    weight: 0.25
+    cache_path: null
+    revision: null
+  - name: wikitext
+    split: wikitext-2-raw-v1
+    weight: 0.35
+    cache_path: null
+    revision: null
+  - name: codeparrot/github-code-clean
+    split: train
+    weight: 0.4
+    cache_path: null
+    revision: null
+evolution:
+  rung0_thresholds:
+    gate_entropy_min: 0.8
+    gate_entropy_max: 3.5
+  rung1_tokens: 180000
+  rung2_tokens: 600000
+  population: 24
+  topk_keep: 0.5
+  crossover_prob: 0.5
+  parent_selection: pareto_uniform
+  pareto_objectives:
+  - ppl_code
+  - ppl_math
+  - long_recall
+  - throughput
+  - ram
+  - layers
+  - moe_blocks
+  - novelty
