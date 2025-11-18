@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import time
 from collections.abc import Iterable
 from pathlib import Path
@@ -76,6 +77,8 @@ class FullWeightTrainer:
         best_loss = float("inf")
         no_improve = 0
         entropy_bad = 0
+        nan_or_inf = False
+        max_loss_jump = 0.0
         optimizer.zero_grad()
         total_steps = max(1, self.steps)
         for step_idx in range(self.steps):
@@ -109,6 +112,8 @@ class FullWeightTrainer:
                 grad_norm = float(grad_total.item())
             else:
                 grad_norm = float(grad_total)
+            if not math.isfinite(grad_norm):
+                nan_or_inf = True
             if grad_norm > self.instability_threshold:
                 stop_reason = f"high_grad({grad_norm:.2f})"
                 optimizer.zero_grad()
@@ -126,6 +131,12 @@ class FullWeightTrainer:
             else:
                 entropy_bad = 0
             current_loss = float(loss.item())
+            if not math.isfinite(current_loss):
+                nan_or_inf = True
+            if best_loss < float("inf"):
+                jump = current_loss - best_loss
+                if jump > max_loss_jump:
+                    max_loss_jump = jump
             if current_loss + self.improvement_tolerance < best_loss:
                 best_loss = current_loss
                 no_improve = 0
@@ -145,6 +156,8 @@ class FullWeightTrainer:
         # Aggregate router telemetry
         router_entropy = 0.0
         router_lb = 0.0
+        router_load_max = 0.0
+        router_load_min = 1.0
         max_grad_norm = 0.0
         try:
             if hasattr(grad_total, "item"):
@@ -161,10 +174,21 @@ class FullWeightTrainer:
                         router_entropy += float(mod.last_entropy.item())
                     if hasattr(mod, "last_lb"):
                         router_lb += float(mod.last_lb.item())
+                    if hasattr(mod, "last_load"):
+                        load = getattr(mod, "last_load")
+                        try:
+                            max_val = float(load.max().item())
+                            min_val = float(load.min().item())
+                            router_load_max = max(router_load_max, max_val)
+                            router_load_min = min(router_load_min, min_val)
+                        except Exception:
+                            pass
                     count += 1
         if count:
             router_entropy /= count
             router_lb /= count
+        else:
+            router_load_min = 0.0
         reason_code = 0.0
         if stop_reason.startswith("high_grad"):
             reason_code = 1.0
@@ -181,9 +205,13 @@ class FullWeightTrainer:
             "long_recall": _estimate_long_recall(spec),
             "router_entropy": router_entropy,
             "router_lb": router_lb,
+            "router_load_max": router_load_max,
+            "router_load_min": router_load_min,
             "max_grad_norm": max_grad_norm,
             "instability": max_grad_norm,
             "stop_reason_code": reason_code,
+            "nan_seen": 1.0 if nan_or_inf else 0.0,
+            "loss_spike": max(0.0, max_loss_jump),
         }
         if spec.model.recurrences:
             metrics.update(self._recurrence_evaluations(model, spec, batch_iter, criterion))

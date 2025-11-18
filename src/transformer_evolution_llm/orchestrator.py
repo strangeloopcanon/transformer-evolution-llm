@@ -77,6 +77,8 @@ class EvolutionRunner:
         self.counter = 0
         self.checkpoint_dir = Path("runs/checkpoints")
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        init_ckpt = getattr(base_spec.train, "init_checkpoint", None)
+        self._init_checkpoint: Path | None = Path(init_ckpt) if init_ckpt else None
         # lineage tracking: candidate id -> list of parent ids
         self._parents: dict[str, list[str]] = {}
         self._history: list[Candidate] = []
@@ -89,6 +91,8 @@ class EvolutionRunner:
         base_candidate = Candidate(
             ident=self._new_id("seed"), spec=self.base_spec.model_copy(deep=True)
         )
+        if self._init_checkpoint is not None:
+            base_candidate.seed_state_path = self._init_checkpoint
         self._parents[base_candidate.ident] = []
         self._evaluate_candidate(base_candidate)
         self.pool.append(base_candidate)

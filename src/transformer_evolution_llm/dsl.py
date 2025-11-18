@@ -193,6 +193,7 @@ class TrainSchedule(BaseModel):
     no_improve_patience: int = Field(default=20, ge=1)
     improvement_tolerance: float = Field(default=1e-3, ge=0.0)
     ppl_stop_threshold: float | None = Field(default=2.5, ge=0.0)
+    init_checkpoint: str | None = None
 
     model_config = {"populate_by_name": True}
     optimizer: OptimizerConfig = Field(default_factory=lambda: OptimizerConfig())
@@ -343,6 +344,8 @@ def save_architecture_spec(spec: ArchitectureSpec, path: str | Path) -> None:
         path.write_text(yaml.safe_dump(spec.model_dump(mode="python"), sort_keys=False))
     else:
         path.write_text(json.dumps(spec.model_dump(mode="python"), indent=2))
+
+
 class CompositeMetricConfig(BaseModel):
     """Define a derived metric based on existing metrics."""
 

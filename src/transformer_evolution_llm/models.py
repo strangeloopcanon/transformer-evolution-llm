@@ -20,6 +20,7 @@ from .dsl import (
     RetroConfig,
     SSMConfig,
 )
+from .plugins import get_component
 
 
 def _swiglu(x: Tensor) -> Tensor:
@@ -237,6 +238,8 @@ class MoELayer(nn.Module):
             uniform = 1.0 / self.cfg.n_experts
             lb = ((freq - uniform) ** 2).mean()
         self.last_lb = lb
+        # Persist the last routing frequency histogram for tooling/metrics.
+        self.last_load = freq
         for expert_pos in range(self.cfg.k):
             idx = topk_idx[..., expert_pos]
             weight = weights[..., expert_pos].unsqueeze(-1)
@@ -342,7 +345,11 @@ class EvolutionBlock(nn.Module):
             elif isinstance(extra, GatedModuleConfig):
                 self.extras.append(GatedModule(extra))
             elif isinstance(extra, CustomModuleConfig):
-                self.extras.append(CustomModule(extra, dim))
+                builder = get_component(extra.name)
+                if builder is not None:
+                    self.extras.append(builder(extra, dim))
+                else:
+                    self.extras.append(CustomModule(extra, dim))
 
     def forward(self, x: Tensor) -> Tensor:
         if self.attn:
