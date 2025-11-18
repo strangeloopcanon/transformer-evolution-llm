@@ -11,7 +11,7 @@ from rich.console import Console
 from rich.table import Table
 
 from . import get_version
-from .api import run_evolution
+from .api import export_frontier_seed, run_evolution
 from .cache_builder import synthesize_cache
 
 app = typer.Typer(help="Evolutionary search loop utilities")
@@ -67,6 +67,29 @@ def frontier(path: Annotated[Path, typer.Argument()] = Path("runs/frontier.json"
             f"{row.get('metrics', {}).get('throughput', 0.0):.2f}",
         )
     console.print(table)
+
+
+@app.command("export-seed")
+def export_seed(
+    frontier_path: Annotated[Path, typer.Argument(help="Path to Pareto frontier JSON file.")],
+    candidate_id: Annotated[str, typer.Argument(help="Candidate identifier to export.")],
+    out: Annotated[
+        Path,
+        typer.Argument(help="Destination config path (e.g., configs/seed_<id>.yaml)."),
+    ],
+    checkpoint_dir: Annotated[
+        Path,
+        typer.Option(help="Directory containing candidate checkpoints."),
+    ] = Path("runs/checkpoints"),
+) -> None:
+    """Export a frontier candidate spec + checkpoint pointer as a seed config."""
+    export_frontier_seed(
+        frontier_path=frontier_path,
+        candidate_id=candidate_id,
+        out_path=out,
+        checkpoint_dir=checkpoint_dir,
+    )
+    console.print(f"[bold green]Seed config written:[/] {out}")
 
 
 def main() -> None:

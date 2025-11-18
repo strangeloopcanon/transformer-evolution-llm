@@ -30,6 +30,29 @@ def _git_commit() -> str | None:
         return None
 
 
+def _detect_attention_impl(device: str) -> str:
+    """Best-effort attention kernel description for audit logs."""
+    try:
+        import torch
+
+        if torch.backends.cuda.is_built() and device.startswith("cuda"):
+            try:
+                from torch.backends.cuda import sdp_kernel
+
+                if hasattr(sdp_kernel, "is_flash_sdp_available") and sdp_kernel.is_flash_sdp_available():
+                    return "flash"
+                if hasattr(sdp_kernel, "is_mem_efficient_sdp_available") and sdp_kernel.is_mem_efficient_sdp_available():
+                    return "sdpa"
+                return "cuda_math"
+            except Exception:
+                return "cuda_sdpa"
+        if device.startswith("mps"):
+            return "mps_mha"
+    except Exception:
+        pass
+    return "vanilla_mha"
+
+
 @app.command()
 def main(
     config: Path = typer.Argument(..., exists=True, readable=True, help="YAML/JSON DSL config"),
@@ -110,12 +133,8 @@ def main(
 
         dev = device
         msg = f"[runner] device={dev}"
-        if torch.backends.cuda.is_built() and dev.startswith("cuda"):
-            msg += ", attention_kernels=cuda_sdpa"
-        elif dev.startswith("mps"):
-            msg += ", attention_kernels=PyTorch MHA (MPS)"
-        else:
-            msg += ", attention_kernels=PyTorch MHA"
+        impl = _detect_attention_impl(dev)
+        msg += f", attention_impl={impl}"
         typer.echo(msg)
     except Exception:
         pass
@@ -150,6 +169,7 @@ def main(
             "instability": score_weight_instability,
             "prior_distance": score_weight_prior,
         },
+        "attention_impl": _detect_attention_impl(device),
         "cleanup_old_checkpoints": cleanup_old_checkpoints,
         "frontier": str(out.resolve()),
         "lineage": str(lineage_out.resolve()),

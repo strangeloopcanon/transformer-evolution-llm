@@ -264,6 +264,12 @@ train:
 
 These map to the trainer’s entropy/instability/no-improvement guards and the rung‑1 perplexity stop that the evolution runner uses before the full training rung.
 
+The trainer also logs stability telemetry per candidate:
+
+- `stop_reason_code`: 0 = full run, 1 = high_grad, 2 = low_entropy, 3 = no_improve.
+- `nan_seen`: 1.0 if any NaN/Inf was observed in loss or gradients, else 0.0.
+- `loss_spike`: largest single-step increase in training loss vs the best-so-far.
+
 ### Depth recurrence
 
 - Wrap contiguous layer ranges in a recurrence loop using `model.recurrences`:
