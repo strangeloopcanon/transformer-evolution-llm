@@ -198,12 +198,15 @@ class DenseFFN(nn.Module):
 
 
 class Expert(nn.Module):
-    def __init__(self, dim: int, hidden: int, activation: str):
+    def __init__(self, dim: int, hidden: int, activation: str, hops: int = 1):
         super().__init__()
         self.net = DenseFFN(dim, hidden, activation)
+        self.hops = max(1, hops)
 
     def forward(self, x: Tensor) -> Tensor:
-        return cast(Tensor, self.net(x))
+        for _ in range(self.hops):
+            x = cast(Tensor, self.net(x))
+        return x
 
 
 class MoELayer(nn.Module):
@@ -211,9 +214,47 @@ class MoELayer(nn.Module):
         super().__init__()
         self.cfg = cfg
         self.router = nn.Linear(dim, cfg.n_experts)
-        self.experts = nn.ModuleList(
-            Expert(dim, cfg.hidden, activation="swiglu") for _ in range(cfg.n_experts)
-        )
+        self.experts = nn.ModuleList()
+        if cfg.experts:
+            for idx in range(cfg.n_experts):
+                # If fewer expert configs than n_experts, repeat the last one.
+                if idx < len(cfg.experts):
+                    ecfg = cfg.experts[idx]
+                else:
+                    ecfg = cfg.experts[-1]
+                etype = getattr(ecfg, "type", "dense")
+                if etype == "dense":
+                    hidden = ecfg.hidden or cfg.hidden  # type: ignore[union-attr]
+                    hops = getattr(ecfg, "hops", 1)
+                    self.experts.append(Expert(dim, hidden, activation=ecfg.activation, hops=hops))  # type: ignore[arg-type]
+                elif etype == "ssm":
+                    # Wrap SSMLayer as an expert, possibly with multiple hops.
+                    hops = getattr(ecfg, "hops", 1)
+                    ssm_layer = SSMLayer(ecfg.ssm, dim)  # type: ignore[union-attr]
+
+                    class _SSMExpert(nn.Module):
+                        def __init__(self, layer: SSMLayer, num_hops: int) -> None:
+                            super().__init__()
+                            self.layer = layer
+                            self.hops = max(1, num_hops)
+
+                        def forward(self, x: Tensor) -> Tensor:  # type: ignore[override]
+                            for _ in range(self.hops):
+                                x = self.layer(x)
+                            return x
+
+                    self.experts.append(_SSMExpert(ssm_layer, hops))
+                elif etype == "custom":
+                    # Use CustomModule to build a custom expert if possible.
+                    custom_cfg = CustomModuleConfig(name=ecfg.name, params=ecfg.params)  # type: ignore[union-attr]
+                    self.experts.append(CustomModule(custom_cfg, dim))
+                else:
+                    # Fallback to a standard dense expert.
+                    self.experts.append(Expert(dim, cfg.hidden, activation="swiglu"))
+        else:
+            self.experts = nn.ModuleList(
+                Expert(dim, cfg.hidden, activation="swiglu") for _ in range(cfg.n_experts)
+            )
 
     def forward(self, x: Tensor) -> Tensor:
         temp = float(self.cfg.router_temperature) if self.cfg.router_temperature else 1.0
