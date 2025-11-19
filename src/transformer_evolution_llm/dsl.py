@@ -74,6 +74,39 @@ class MoEFFNConfig(BaseModel):
     balance: float = Field(default=0.05, ge=0.0)
     shared: int = Field(default=0, ge=0)
     router_temperature: float | None = Field(default=None, gt=0.0)
+    experts: list[MoEExpertConfig] = Field(default_factory=list)
+
+
+class MoEDenseExpertConfig(BaseModel):
+    """Dense expert configuration for MoE blocks."""
+
+    type: Literal["dense"] = "dense"
+    hidden: int | None = Field(default=None, gt=0)
+    activation: Literal["silu", "gelu", "relu", "swiglu"] = "swiglu"
+    hops: int = Field(default=1, ge=1)
+
+
+class MoESSMExpertConfig(BaseModel):
+    """SSM expert configuration for MoE blocks."""
+
+    type: Literal["ssm"] = "ssm"
+    ssm: SSMConfig
+    hops: int = Field(default=1, ge=1)
+
+
+class MoECustomExpertConfig(BaseModel):
+    """Custom expert backed by a plugin or CustomModule."""
+
+    type: Literal["custom"] = "custom"
+    name: str
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
+MoEExpertConfig = Annotated[
+    MoEDenseExpertConfig | MoESSMExpertConfig | MoECustomExpertConfig,
+    Field(discriminator="type"),
+]
+
 
 
 FfnConfig = Annotated[DenseFFNConfig | MoEFFNConfig, Field(discriminator="type")]
@@ -285,6 +318,12 @@ class EvolutionConfig(BaseModel):
     )
     objectives: dict[str, Literal["max", "min"]] | None = None
     composite_metrics: list["CompositeMetricConfig"] = Field(default_factory=list)
+    # Optional promotion rung for high-budget candidates (live mode only)
+    promotion_prob: float = Field(default=0.0, ge=0.0, le=1.0)
+    promotion_min_layers: int = Field(default=0, ge=0)
+    promotion_min_moe_blocks: int = Field(default=0, ge=0)
+    promotion_steps_multiplier: float = Field(default=1.0, ge=1.0)
+    promotion_tokens_multiplier: float = Field(default=1.0, ge=1.0)
 
 
 class PriorConfig(BaseModel):

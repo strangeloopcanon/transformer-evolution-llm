@@ -86,6 +86,18 @@ class EvolutionRunner:
         self._rung1_ratio = 0.2
         self._rung2_ratio = 1.0
         self.ppl_stop_threshold = base_spec.train.ppl_stop_threshold
+        # Promotion heuristics (live mode) for high-budget candidates
+        self._promotion_prob = float(getattr(self.cfg, "promotion_prob", 0.0) or 0.0)
+        self._promotion_min_layers = int(getattr(self.cfg, "promotion_min_layers", 0) or 0)
+        self._promotion_min_moe_blocks = int(
+            getattr(self.cfg, "promotion_min_moe_blocks", 0) or 0
+        )
+        self._promotion_steps_multiplier = float(
+            getattr(self.cfg, "promotion_steps_multiplier", 1.0) or 1.0
+        )
+        self._promotion_tokens_multiplier = float(
+            getattr(self.cfg, "promotion_tokens_multiplier", 1.0) or 1.0
+        )
 
     def run(self, generations: int) -> list[Candidate]:
         base_candidate = Candidate(
@@ -182,6 +194,9 @@ class EvolutionRunner:
                     pass
                 candidate.seed_state_path = None
             candidate.status = "completed"
+            # Optional promotion rung: give complex candidates extra budget
+            if self._should_promote(candidate, tokens_budget, scaled_tokens):
+                self._run_promotion(candidate, base_steps, tokens_budget, scaled_tokens)
             # Prior distance metric (not in objectives by default)
             candidate.metrics["prior_distance"] = self._prior_distance(candidate.spec)
             self._apply_composite_metrics(candidate)
@@ -199,6 +214,55 @@ class EvolutionRunner:
             return
         self._apply_composite_metrics(candidate)
         self.frontier.update(candidate)
+
+    def _should_promote(self, candidate: Candidate, tokens_budget: int, used_tokens: int) -> bool:
+        """Decide whether to apply a high-budget promotion rung to this candidate."""
+        if self._promotion_prob <= 0.0:
+            return False
+        if self.mode != "live" or self.trainer is None or self.data_module is None:
+            return False
+        if tokens_budget <= 0 or used_tokens >= tokens_budget:
+            return False
+        layers = candidate.spec.model.n_layers
+        moe_blocks = candidate.spec.model.moe_block_count()
+        if layers < self._promotion_min_layers:
+            return False
+        if moe_blocks < self._promotion_min_moe_blocks:
+            return False
+        if self.rng.random() > self._promotion_prob:
+            return False
+        return True
+
+    def _run_promotion(
+        self,
+        candidate: Candidate,
+        base_steps: int,
+        tokens_budget: int,
+        used_tokens: int,
+    ) -> None:
+        """Apply an additional high-budget training rung to the candidate."""
+        if self.trainer is None or self.data_module is None:
+            return
+        extra_tokens = int(self._promotion_tokens_multiplier * max(tokens_budget - used_tokens, 0))
+        if extra_tokens <= 0:
+            return
+        max_tokens = min(tokens_budget, used_tokens + extra_tokens)
+        promo_steps = max(1, int(base_steps * self._promotion_steps_multiplier))
+        original_steps = self.trainer.steps
+        try:
+            self.trainer.steps = promo_steps
+            batches = self.data_module.batches(max_tokens=max_tokens)
+            seed_state = candidate.checkpoint
+            metrics3, checkpoint3 = self.trainer.train(
+                candidate=candidate,
+                spec=candidate.spec,
+                batch_iter=batches,
+                seed_state_path=seed_state,
+            )
+            candidate.metrics.update(metrics3)
+            candidate.checkpoint = checkpoint3
+        finally:
+            self.trainer.steps = original_steps
 
     @staticmethod
     def _structural_distance(a: ArchitectureSpec, b: ArchitectureSpec) -> float:

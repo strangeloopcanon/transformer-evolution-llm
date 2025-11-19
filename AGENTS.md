@@ -11,6 +11,7 @@ Drop‑In Rules for Autonomous Coding Agents
 3) On failure, apply the **triage in Appendix B** (do not loop blindly).  
 4) Open PR with tests (LLM live if applicable).
 5) For any piece of work you start doing, create issues using bd (see below) and that's your bible of things to do, in order.
+6) As much as possible I prefer using uv instead of pip. Use it accordingly.
 
 ---
 
@@ -20,11 +21,19 @@ Drop‑In Rules for Autonomous Coding Agents
 - Record context, plan, risks, tests, and failures via 'bd' tool, mentioned at the bottom. Always bd init to start.
 - Handle failures using Appendix B (retries, cost ceilings, infrastructure vs. code).
 
+- - Update README or docstrings when behaviour changes. Always ensure README answers the "so what" question. It should start with a statement about what we're aiming to do. What the unique factor is. Anything optional should always be a collapsible section. Never have it be an exhaustive technical list, no reader cares about that.
+
 - All the code that’s part of our architecture goes into the one monolith we have.
 - The monolith is composed of separate modules (modules which all run together in the same process).
 - Modules cannot call each other, except through specific interfaces (for our Python monolith, we put those in a file called some_module/api.py, so other modules can do from some_module.api import some_function, SomeClass and call things that way.
 - All of these interfaces are statically typed. What the functions accept and what they return are statically typed, with types usually being Pydantic classes (no passing a bunch of opaque dicts!).
 - The above is enforced via automated checks on CI and in the git pre-commit stage. More on this later in the doc.
+
+NOTE:
+If you're having trouble, YOU MUST STOP and ask for help, especially for tasks where human input would be valuable.
+NEVER add comments explaining that something is "improved", "better", "new", "enhanced", or referencing what it used to be. [Presumably he found Claude to clutter its code with these notes.]
+YOU MUST ALWAYS find the root cause of any issue you are debugging. YOU MUST NEVER fix a symptom or add a workaround instead of finding a root cause, even if it is faster or I seem like I'm in a hurry.
+
 ---
 
 ## 1) Development Cycle
@@ -33,7 +42,7 @@ Drop‑In Rules for Autonomous Coding Agents
 3. Run the interface contract (Appendix A).  
 4. Open PR: “simplest that works,” test evidence (incl. LLM live if relevant), risks, rollback.  
 5. If blocked, split scope. Log deferrals as issues.
-6. When user requests to update github, create a PR, use the CLI to merge it, sync ev'thing, get back to main and then confirm to the user. Do not stop in the middle, do the WHOLE THING.
+6. When user requests to update Github, create a PR, use the CLI to merge it, sync ev'thing, get back to main and then confirm to the user. Do not stop in the middle, do the WHOLE THING.
 7. Treat backend-specific caveats as part of Interface Contract notes and LLM live test goldens.
 
 ---
@@ -42,11 +51,11 @@ Drop‑In Rules for Autonomous Coding Agents
 
 | Topic | **Baseline** (default) | **Production** (real users + longevity) |
 |---|---|---|
-| Format | Black (Py); Prettier (JS/TS) | Same |
+| Format | Prettier (JS/TS) | Same, plus Black (Py) |
 | Lint | Ruff defaults (Py); ESLint v9 flat (JS/TS) | Expanded rules; exceptions documented |
-| Types | mypy (Py) / `tsc` (TS) not strict | `mypy --strict`; TS `strict`; no lingering ignores |
+| Types | Basic only | `mypy --strict`; TS `strict`; no lingering ignores |
 | Coverage | Global ≥80%; PRs don’t reduce coverage | Global ≥90%; changed lines ≥90%; mutation tests on critical modules (scheduled) |
-| LLM live tests | **Mandatory if any LLM logic exists**; golden scenarios in CI (staging keys) | Add faithfulness/relevance evals, OWASP LLM Top‑10 probes, and SLO gates |
+| LLM live tests | **Mandatory if any LLM logic exists** | Add faithfulness/relevance evals, OWASP LLM Top‑10 probes, and SLO gates |
 | SAST | Bandit (advisory); minimal Semgrep (advisory) | Bandit + Semgrep blocking on high severity |
 | Supply chain | `pip‑audit` report (non‑blocking) | `pip‑audit` blocking; SBOM artifact |
 | Releases | Conventional Commits; manual version bump | Semantic release + changelog from commits |
@@ -58,9 +67,9 @@ Drop‑In Rules for Autonomous Coding Agents
 ---
 
 ## 3) Environments
-- **Python:** Always `venv`. If missing, create one, install `requirements*.txt`, and log the action. Never rely on global Python.  
+- **Python:** `venv` if important, otherwise use global one as normal. If missing and you need to, create one, install `requirements*.txt`, and log the action.
 - **Node/TS (if present):** `npm ci` or `pnpm i --frozen-lockfile`.  
-- **OS:** Linux runner/container by default. Log any OS‑specific choice.
+- **OS:** I am working on a MacBook Pro M4.
 
 ---
 
@@ -83,7 +92,7 @@ Drop‑In Rules for Autonomous Coding Agents
 - **Output shape:** choose **JSON vs free‑text** for the product surface. If structured, define JSON Schema or Pydantic and validate. If free‑text, assert minimal invariants to reduce brittleness.  
 - **Safety:** add prompt‑injection and insecure‑output probes. Production aligns with **OWASP LLM Top‑10**.  
 - **Faithfulness:** for RAG/tool‑use, add citation checks and hallucination guards; gate deploys on eval SLOs in production.  
-- **Providers (illustrative; verify availability at run time):** OpenAI **current flagship** (e.g., GPT‑5 when available), Anthropic **Claude Sonnet 4.5 / latest**, Google **Gemini 2.5 Pro / latest**, xAI **Grok‑4 / latest** (e.g., via OpenRouter). Optional glue: Simon Willison’s **`llm`** library.  
+- **Providers (illustrative; verify availability at run time):** OpenAI **current flagship** (GPT‑5), Anthropic **Claude Sonnet 4.5 / latest**, Google **Gemini 2.5 Pro / latest**, xAI **Grok‑4 / latest** (e.g., via OpenRouter). Optional glue: Simon Willison’s **`llm`** library.  
 - **Determinism:** lock provider+model+version for goldens; swapping models requires re‑baselining (Appendix B).
 
 ---
@@ -100,7 +109,8 @@ Drop‑In Rules for Autonomous Coding Agents
 - Versioning: **SemVer**. Production automates versioning and changelogs from commits.
 - Messages: short, imperative. 
 - PRs: include summary, rationale, exact commands to reproduce if useful.
-- Link related issues. Keep diffs focused. Update README or docstrings when behaviour changes.
+- Link related issues. Keep diffs focused. 
+- Update README or docstrings when behaviour changes. Always ensure README answers the "so what" question. It should start with a statement about what we're aiming to do. What the unique factor is. Anything optional should always be a collapsible section. Never have it be an exhaustive technical list, no reader cares about that.
 
 ---
 
@@ -227,9 +237,8 @@ Switch to `AGENT_MODE=production` when any apply:
 
 ## Appendix F — Cold start (empty repo rules)
 - **Interface contract** (Appendix A) via a **Makefile** (preferred for Python). `justfile` is acceptable. For Node‑only repos, package.json scripts are acceptable.  
-- **Python:** `pyproject.toml` with Black, Ruff, mypy, pytest, coverage; `requirements*.txt`; `.gitignore`; pre‑commit + commitlint enabled.  
-- **LLM projects:** `tests_llm_live/` with goldens and schema validation.  
-- **CI:** a single workflow that runs `setup` → `all` (and `release` on tags in Production).  
+- **Python:** `pyproject.toml` with Ruff, pytest, coverage; `requirements*.txt`; `.gitignore`; pre‑commit + commitlint enabled.  
+- **LLM projects:** `tests_llm_live/` with schema validation.  
 
 ---
 

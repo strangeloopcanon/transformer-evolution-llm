@@ -33,6 +33,58 @@ Recent phi-creative sweeps (Pareto-uniform + lexicase) spawned 54 frontier survi
 - Diversity without weights: Pareto-uniform preserved both high-throughput and high-quality niches without us hand-weighting layers/MoE.
 - DSL velocity: adding sparsity + router knobs to the schema instantly expanded the search space; template mutations spread those knobs consistently across layers.
 
+## What the newer runs taught us
+
+As we pushed the loop harder on this machine the story evolved in three phases:
+
+1. **Seeded sweeps from `xover-36-37b0` (CPU + MPS)**  
+   - Starting from the canonical hybrid (`configs/seed_xover_36_37b0.yaml`), short seeded runs on CPU and MPS confirmed the original phi‑creative picture:
+     - Shallow hybrids (1–3 layers) with **local_global + retro + a single MoE + a light mamba2 slice** dominate under tiny budgets (a few hundred steps, ≈4 tokens/param).  
+     - Ablations (`scripts/run_ablation.py`) showed:
+       - `retro_off` collapses `long_recall` to ~0 and often improves PPL → retro is a clean horizon knob.  
+       - `kv_groups_to_dense` generally hurts PPL at fixed recall once we add MoE and sparsity.  
+       - Under these budgets, MoE blocks are over‑capacity: `moe_to_dense` improves PPL in the top models while leaving `long_recall` unchanged.
+
+2. **High‑budget recurrence sweeps (`live_phi_creative_recur_super.yaml`)**  
+   - We then dialed budgets up via `configs/live_phi_creative_recur_super.yaml`:
+     - `max_tokens ≈ 1.8M`, `tokens_per_param ≈ 12`, `rung1_tokens = 6e5`, `rung2_tokens = 1.8e6`, population 32.  
+     - Blocks mix GQA, local_global / local_block / dilated sparsity, MoE, mamba2, and multiple retro extras, wrapped in a recurrence over blocks 1–4.
+   - The resulting frontier (`runs/frontier_phi_creative_super_recur_mps.json`) surfaced two regimes:
+     - **Shallow high‑recall motifs** (1–2 layers, often 1 MoE + retro + SSM) that still win PPL under aggressive early‑stop.  
+     - **Deep “hydras”**: 7–15 layer stacks with 2–4 MoE blocks, multiple mamba2 branches, and long recurrences.  
+   - Ablations flipped the earlier MoE story:
+     - For the top PPL candidates in this run, `moe_to_dense` now **worsens** PPL, while `retro_off` still trades horizon for quality.  
+     - Under higher tokens/param, MoE + kv compression finally pay off; retro remains the horizon dial.
+
+3. **Promotion: giving deep hybrids a fair fight**  
+   - To let deep/MoE‑heavy models compete inside a single evolutionary run, we added a **promotion rung** in `EvolutionRunner`:
+     - Promotion is configured in `EvolutionConfig` via:
+       - `promotion_prob` – probability to promote eligible candidates.  
+       - `promotion_min_layers`, `promotion_min_moe_blocks` – structural thresholds.  
+       - `promotion_steps_multiplier`, `promotion_tokens_multiplier` – how much extra budget to give.  
+     - In live mode, candidates that meet the thresholds (e.g., ≥6 layers and ≥2 MoE blocks) sometimes get a third training rung with more steps/tokens, and their promoted metrics are what the frontier sees.
+   - With these knobs set in `live_phi_creative_recur_super.yaml` and run via `run_phi_promotion_mps.sh`, the **promotion sweep** (`runs/frontier_phi_promotion_mps.json`) looks very different:
+     - Best PPL drops further (`ppl_code ≈1.18e4`), and the **top‑10 models are no longer dominated by shallow stacks**:
+       - Top‑10 average: ~10.5 layers and ~3.6 MoE blocks.  
+       - Rest of the frontier: ~5.1 layers and ~1.6 MoE blocks.
+     - Deep, heavily MoE‑hybrid “hydras” (up to 19 layers and 7 MoE blocks in this run) now sit near the top of the frontier instead of languishing as undertrained curiosities.
+
+### A loose “heterogeneity scaling law”
+
+Across these runs we see a consistent pattern:
+
+- At **low budgets** (few hundred steps, ≈4 tokens/param), increasing architectural heterogeneity
+  (more layers, more MoE blocks, more recurrences) reliably hurts PPL—simple hybrids win.
+- At **higher budgets** (≈12 tokens/param) without promotion, heterogeneity begins to show up on the frontier but still trails the shallow winners.
+- Once we add **structured promotions** (extra steps/tokens for deep + MoE‑rich candidates), the relationship changes:
+  - The best PPL candidates move into a higher‑heterogeneity regime (more layers + more MoE) while shallow hybrids remain competitive but no longer uniquely best.
+
+Informally: there is a **budget threshold** beyond which “weirder” hybrids (deeper stacks, more MoE/SSM/retro) stop being dead weight and start paying for themselves. The DSL and orchestration are now set up so you can explore that frontier explicitly by:
+
+- Raising `tokens_per_param` and `max_tokens` in configs like `live_phi_creative_recur_super.yaml`.  
+- Turning promotion on/off or adjusting its thresholds in `evolution` to bias where extra budget goes.  
+- Inspecting `runs/frontier_*.json` and the matching subway diagrams to see how the frontier shifts as complexity and budget rise together.
+
 ## Evolution at a glance
 
 Lineages are exported as JSON and rendered as Mermaid so you can see ideas branch, merge, and sometimes disappear. Below are two complementary views derived from the recent phi-creative runs.
