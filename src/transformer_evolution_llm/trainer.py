@@ -278,7 +278,8 @@ class FullWeightTrainer:
         best_ppl = None
         for value in rec_values:
             steps = dict.fromkeys(range(len(spec.model.recurrences)), value)
-            model.set_recurrence_steps(steps)
+            if isinstance(model, EvolutionModel):
+                model.set_recurrence_steps(steps)
             ppl = self._evaluate_perplexity(model, spec, batch_iter, criterion)
             metrics[f"ppl_code_rec_{value}"] = ppl
             if value == base_value:

@@ -43,10 +43,13 @@ ActivationLookup: dict[str, Callable[[Tensor], Tensor]] = {
 class RotaryPositionalEncoding(nn.Module):
     """Minimal RoPE implementation for experimentation."""
 
+    inv_freq: Tensor
+
     def __init__(self, dim: int, base: float = 10000.0):
         super().__init__()
         inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2).float() / dim))
         self.register_buffer("inv_freq", inv_freq)
+        self.inv_freq = cast(Tensor, self.inv_freq)
         self.dim = dim
         self.base = base
 
@@ -354,7 +357,12 @@ class MoELayer(nn.Module):
         return outputs
 
     def sort_experts(self) -> None:
-        norms = [expert.net.fc1.weight.norm().item() for expert in self.experts]
+        norms = []
+        for expert in self.experts:
+            if isinstance(expert, Expert):
+                norms.append(expert.net.fc1.weight.norm().item())
+            else:
+                norms.append(0.0)
         permutation = sorted(range(len(norms)), key=lambda i: norms[i], reverse=True)
         self.reorder(permutation)
 

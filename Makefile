@@ -20,7 +20,7 @@ $(VENV):
 	$(PIP) install --upgrade pip
 
 setup: $(VENV)
-	$(PIP) install -e ".[dev]"
+	uv pip install --python $(VENV_BIN)/python -e ".[dev]"
 	@echo "AGENT_MODE=$(AGENT_MODE)" > .env.agent_mode
 
 format:
