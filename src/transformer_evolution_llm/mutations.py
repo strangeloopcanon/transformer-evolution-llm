@@ -97,8 +97,8 @@ def insert_retro_module(spec: ArchitectureSpec, rng: random.Random) -> Architect
     child = clone_spec(spec)
     block = rng.choice(child.model.blocks)
     retro = RetroConfig(
-        memory_tokens=rng.choice([512, 1024, 2048]),
-        stride=rng.choice([32, 64, 128]),
+        memory_tokens=int(rng.choice([512, 1024, 2048])),
+        stride=int(rng.choice([32, 64, 128])),
         aggregator=rng.choice(["mean", "attention", "gate"]),
         gating_weight=rng.uniform(0.1, 0.9),
     )
@@ -310,8 +310,8 @@ def add_extra_combo(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureS
     if RetroConfig not in existing_types:
         block.extras.append(
             RetroConfig(
-                memory_tokens=rng.choice([256, 512, 1024]),
-                stride=rng.choice([32, 64, 128]),
+                memory_tokens=int(rng.choice([256, 512, 1024])),
+                stride=int(rng.choice([32, 64, 128])),
                 aggregator=rng.choice(["mean", "attention", "gate"]),
                 gating_weight=rng.uniform(0.1, 0.5),
             )

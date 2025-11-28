@@ -152,6 +152,15 @@ class RetroConfig(BaseModel):
     aggregator: Literal["mean", "attention", "gate"] = "gate"
     gating_weight: float = Field(default=0.5, ge=0.0, le=1.0)
 
+    @model_validator(mode="before")
+    @classmethod
+    def coerce_int_fields(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            for key in ("memory_tokens", "stride"):
+                if key in data and isinstance(data[key], float):
+                    data[key] = int(data[key])
+        return data
+
 
 class GatedModuleConfig(BaseModel):
     """Lightweight gate that blends multiple submodules."""
