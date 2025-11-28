@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import cast
+from unittest.mock import patch
 
 import torch
 from torch import nn, Tensor
@@ -9,38 +9,38 @@ from transformer_evolution_llm.dsl import AttentionConfig
 from transformer_evolution_llm.models import MultiHeadSelfAttention
 
 
-class _DummyMHA(nn.Module):
-    def __init__(self) -> None:
+class CaptureModule(nn.Module):
+    def __init__(self, out_features: int):
         super().__init__()
-        self.last_q: Tensor | None = None
-        self.last_mask: Tensor | None = None
+        self.out_features = out_features
+        self.last_input: Tensor | None = None
 
-    def forward(  # type: ignore[override]
-        self,
-        query: Tensor,
-        key: Tensor,
-        value: Tensor,
-        need_weights: bool = False,
-        attn_mask: Tensor | None = None,
-    ) -> tuple[Tensor, None]:
-        del key, value, need_weights
-        self.last_q = query
-        if attn_mask is not None:
-            self.last_mask = attn_mask
-        return query, None
+    def forward(self, x: Tensor) -> Tensor:
+        self.last_input = x
+        b, t, _ = x.shape
+        return torch.zeros(b, t, self.out_features)
 
 
 def test_qk_norm_max_clamps_queries() -> None:
     cfg = AttentionConfig(heads=2, head_dim=4, qk_norm_max=1.0)
     dim = cfg.heads * cfg.head_dim
     module = MultiHeadSelfAttention(cfg, dim)
-    # Replace underlying attention with a dummy to inspect inputs.
-    dummy = _DummyMHA()
-    module.attn = cast(nn.MultiheadAttention, dummy)  # type: ignore[assignment]
+
     x = torch.randn(2, 4, dim) * 10.0
-    _ = module(x)
-    assert dummy.last_q is not None
-    norms = dummy.last_q.norm(dim=-1)
+
+    # Replace c_attn with CaptureModule
+    # Output dim for c_attn is (H + 2*H_kv)*D = (2+2+2)*4 = 24
+    capture_mod = CaptureModule(24)
+    module.c_attn = capture_mod
+
+    # Mock c_proj and SDPA to allow forward pass to complete
+    module.c_proj = CaptureModule(dim)
+
+    with patch("torch.nn.functional.scaled_dot_product_attention", return_value=torch.zeros(2, 2, 4, 4)):
+        _ = module(x)
+
+    assert capture_mod.last_input is not None
+    norms = capture_mod.last_input.norm(dim=-1)
     assert torch.all(norms <= 1.0 + 1e-4)
 
 
@@ -48,25 +48,32 @@ def test_sliding_sparsity_builds_local_window_mask() -> None:
     cfg = AttentionConfig(heads=2, head_dim=4, sw=1, sparsity="sliding")
     dim = cfg.heads * cfg.head_dim
     module = MultiHeadSelfAttention(cfg, dim)
-    dummy = _DummyMHA()
-    module.attn = cast(nn.MultiheadAttention, dummy)  # type: ignore[assignment]
+
     t = 5
     x = torch.randn(1, t, dim)
-    _ = module(x)
-    assert dummy.last_mask is not None
-    mask = dummy.last_mask
-    assert mask.shape == (t, t)
-    for i in range(t):
-        lo = max(0, i - 1)
-        hi = min(t, i + 2)
-        # Positions inside the window should be unmasked (0.0).
-        window = mask[i, lo:hi]
-        assert torch.all(window == 0.0)
-        # Positions outside should be masked (-inf).
-        if lo > 0:
-            assert torch.all(torch.isneginf(mask[i, :lo]))
-        if hi < t:
-            assert torch.all(torch.isneginf(mask[i, hi:]))
+
+    with patch("torch.nn.functional.scaled_dot_product_attention") as mock_sdpa:
+        # Mock return (B, H, T, D)
+        mock_sdpa.return_value = torch.zeros(1, 2, t, 4)
+        _ = module(x)
+
+        args, kwargs = mock_sdpa.call_args
+        # attn_mask is passed as kwarg
+        mask = kwargs.get("attn_mask")
+        assert mask is not None
+        assert mask.shape == (t, t)
+
+        for i in range(t):
+            lo = max(0, i - 1)
+            hi = min(t, i + 2)
+            # Positions inside the window should be unmasked (0.0).
+            window = mask[i, lo:hi]
+            assert torch.all(window == 0.0)
+            # Positions outside should be masked (-inf).
+            if lo > 0:
+                assert torch.all(torch.isneginf(mask[i, :lo]))
+            if hi < t:
+                assert torch.all(torch.isneginf(mask[i, hi:]))
 
 
 def test_block_sparsity_masks_cross_block_attention() -> None:
@@ -79,18 +86,21 @@ def test_block_sparsity_masks_cross_block_attention() -> None:
     )
     dim = cfg.heads * cfg.head_dim
     module = MultiHeadSelfAttention(cfg, dim)
-    dummy = _DummyMHA()
-    module.attn = cast(nn.MultiheadAttention, dummy)  # type: ignore[assignment]
+
     t = 6
     x = torch.randn(1, t, dim)
-    _ = module(x)
-    assert dummy.last_mask is not None
-    mask = dummy.last_mask
-    assert mask.shape == (t, t)
-    # Tokens 0-1, 2-3, 4-5 form separate blocks.
-    # Check that token 0 cannot attend to token 2 (masked) but can attend to token 1.
-    assert mask[0, 1] == 0.0
-    assert torch.isneginf(mask[0, 2])
+
+    with patch("torch.nn.functional.scaled_dot_product_attention") as mock_sdpa:
+        mock_sdpa.return_value = torch.zeros(1, 2, t, 4)
+        _ = module(x)
+
+        mask = mock_sdpa.call_args.kwargs.get("attn_mask")
+        assert mask is not None
+        assert mask.shape == (t, t)
+        # Tokens 0-1, 2-3, 4-5 form separate blocks.
+        # Check that token 0 cannot attend to token 2 (masked) but can attend to token 1.
+        assert mask[0, 1] == 0.0
+        assert torch.isneginf(mask[0, 2])
 
 
 def test_dilated_sparsity_masks_every_other_token() -> None:
@@ -102,21 +112,42 @@ def test_dilated_sparsity_masks_every_other_token() -> None:
     )
     dim = cfg.heads * cfg.head_dim
     module = MultiHeadSelfAttention(cfg, dim)
-    dummy = _DummyMHA()
-    module.attn = cast(nn.MultiheadAttention, dummy)  # type: ignore[assignment]
+
     t = 6
     x = torch.randn(1, t, dim)
-    _ = module(x)
-    assert dummy.last_mask is not None
-    mask = dummy.last_mask
-    # Token 0 attends only to even positions; token 1 to odd positions.
-    even_positions = [0, 2, 4]
-    odd_positions = [1, 3, 5]
-    for j in even_positions:
-        assert mask[0, j] == 0.0
-    for j in odd_positions:
-        assert torch.isneginf(mask[0, j])
-    for j in odd_positions:
-        assert mask[1, j] == 0.0
-    for j in even_positions:
-        assert torch.isneginf(mask[1, j])
+
+    with patch("torch.nn.functional.scaled_dot_product_attention") as mock_sdpa:
+        mock_sdpa.return_value = torch.zeros(1, 2, t, 4)
+        _ = module(x)
+
+        mask = mock_sdpa.call_args.kwargs.get("attn_mask")
+        assert mask is not None
+
+        # Token 0 attends only to even positions; token 1 to odd positions.
+        even_positions = [0, 2, 4]
+        odd_positions = [1, 3, 5]
+        for j in even_positions:
+            assert mask[0, j] == 0.0
+        for j in odd_positions:
+            assert torch.isneginf(mask[0, j])
+        for j in odd_positions:
+            assert mask[1, j] == 0.0
+        for j in even_positions:
+            assert torch.isneginf(mask[1, j])
+
+
+def test_gated_attention_logic() -> None:
+    """Verify that gating parameters are created and used."""
+    cfg = AttentionConfig(heads=2, head_dim=4, gated=True)
+    dim = cfg.heads * cfg.head_dim
+    module = MultiHeadSelfAttention(cfg, dim)
+
+    assert hasattr(module, "gate_weight")
+    assert hasattr(module, "gate_bias")
+    assert module.gate_weight.shape == (2, 4, 4)
+    assert module.gate_bias.shape == (2, 4)
+
+    x = torch.randn(1, 4, dim)
+    # Just run forward to ensure no crash
+    out = module(x)
+    assert out.shape == (1, 4, dim)

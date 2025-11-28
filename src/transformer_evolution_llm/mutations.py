@@ -221,7 +221,21 @@ def tune_recurrence(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureS
     return child
 
 
+def toggle_attn_gating(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
+    child = clone_spec(spec)
+    blocks = [b for b in child.model.blocks if b.attn is not None]
+    if not blocks:
+        return child
+    b = rng.choice(blocks)
+    assert b.attn is not None
+    # Toggle the gated flag (defaulting to False if missing)
+    current = getattr(b.attn, "gated", False)
+    b.attn.gated = not current
+    return child
+
+
 REGISTRY: dict[str, MutationFn] = {
+    "toggle_attn_gating": toggle_attn_gating,
     "dense_to_moe": dense_to_moe,
     "mutate_topk": mutate_topk,
     "shift_moe": shift_moe,
