@@ -246,7 +246,86 @@ def tune_attn_gating(spec: ArchitectureSpec, rng: random.Random) -> Architecture
     return child
 
 
+def duplicate_block_span(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
+    """Append a copied span of blocks to increase depth without disturbing existing indices."""
+    child = clone_spec(spec)
+    blocks = child.model.blocks
+    if not blocks:
+        return child
+    start = rng.randrange(len(blocks))
+    span_len = rng.choice([1, 2, 3])
+    end = min(len(blocks), start + span_len)
+    duplicated = [copy.deepcopy(b) for b in blocks[start:end]]
+    blocks.extend(duplicated)
+    return child
+
+
+def shuffle_block_span(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
+    """Shuffle a local span of blocks to create new phase orderings."""
+    child = clone_spec(spec)
+    blocks = child.model.blocks
+    if len(blocks) < 3:
+        return child
+    span_len = rng.choice([2, 3, 4])
+    if span_len > len(blocks):
+        return child
+    start = rng.randrange(0, len(blocks) - span_len + 1)
+    span = blocks[start : start + span_len]
+    rng.shuffle(span)
+    blocks[start : start + span_len] = span
+    return child
+
+
+def add_additional_recurrence(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
+    """Add a second recurrence window to create multi-stage looping."""
+    child = clone_spec(spec)
+    if len(child.model.blocks) < 2:
+        return child
+    start = rng.randrange(0, len(child.model.blocks) - 1)
+    end = rng.randrange(start + 1, len(child.model.blocks) + 1)
+    rec = RecurrenceConfig(
+        start=start,
+        end=end,
+        adapter=rng.choice(["linear", "gated"]),
+        adapter_dim=None,
+        concat_prelude=rng.choice([True, False]),
+        init_state=rng.choice(["zeros", "noise"]),
+        noise_std=rng.uniform(0.01, 0.05),
+        train_recurrence=rng.choice([1, 2, 3]),
+        max_train_recurrence=rng.choice([2, 4, 6]),
+        curriculum_fraction=rng.uniform(0.1, 0.4),
+        test_recurrences=[1, 2, 4, 8],
+    )
+    child.model.recurrences.append(rec)
+    return child
+
+
+def add_extra_combo(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
+    """Attach multiple extras (retro + gated mix) to encourage hybrid blocks."""
+    child = clone_spec(spec)
+    if not child.model.blocks:
+        return child
+    block = rng.choice(child.model.blocks)
+    existing_types = {type(extra) for extra in block.extras}
+    if RetroConfig not in existing_types:
+        block.extras.append(
+            RetroConfig(
+                memory_tokens=rng.choice([256, 512, 1024]),
+                stride=rng.choice([32, 64, 128]),
+                aggregator=rng.choice(["mean", "attention", "gate"]),
+                gating_weight=rng.uniform(0.1, 0.5),
+            )
+        )
+    if GatedModuleConfig not in existing_types:
+        block.extras.append(GatedModuleConfig(init_weight=rng.uniform(0.05, 0.3)))
+    return child
+
+
 REGISTRY: dict[str, MutationFn] = {
+    "duplicate_block_span": duplicate_block_span,
+    "shuffle_block_span": shuffle_block_span,
+    "add_additional_recurrence": add_additional_recurrence,
+    "add_extra_combo": add_extra_combo,
     "tune_attn_gating": tune_attn_gating,
     "dense_to_moe": dense_to_moe,
     "mutate_topk": mutate_topk,
