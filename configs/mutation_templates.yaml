@@ -73,3 +73,30 @@ templates:
       - insert_block:
           position: random
           block_template: feedback_dense
+
+  - name: tune_local_global
+    weight: 0.9
+    actions:
+      - tune_attn:
+          selector: random
+          sparsity: local_global
+          sw_jitter: 32
+          global_stride: 64
+          block_size: null
+          block_stride: null
+
+  - name: retro_stride_jitter
+    weight: 0.8
+    actions:
+      - add_extra:
+          selector: random
+          extra_type: retro
+          params:
+            memory_tokens: 512
+            stride: 48
+            aggregator: gate
+            gating_weight: 0.3
+      - tune_attn:
+          selector: random
+          sparsity: sliding
+          sw_jitter: -32

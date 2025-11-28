@@ -13,7 +13,7 @@ from rich.table import Table
 from .candidates import Candidate, ObjectiveDirection, ParetoFrontier
 from .crossover import merge_checkpoints, splice_blocks
 from .data import DataModule
-from .dsl import ArchitectureSpec, EvolutionConfig
+from .dsl import ArchitectureSpec, CompositeMetricConfig, EvolutionConfig
 from .evaluation import StaticChecker, estimate_params
 from .mutations import mutate
 from .simulators import evaluator_for_mode
@@ -72,7 +72,10 @@ class EvolutionRunner:
         self.evaluator = (
             None if mode == "live" else evaluator_for_mode(mode, checker=self.checker, seed=seed)
         )
-        self._composite_metrics = getattr(self.cfg, "composite_metrics", []) or []
+        configured_composites = getattr(self.cfg, "composite_metrics", []) or []
+        self._composite_metrics = self._merge_composites(
+            configured_composites, self._default_composites()
+        )
         self.pool: list[Candidate] = []
         self.counter = 0
         self.checkpoint_dir = Path("runs/checkpoints")
@@ -89,15 +92,20 @@ class EvolutionRunner:
         # Promotion heuristics (live mode) for high-budget candidates
         self._promotion_prob = float(getattr(self.cfg, "promotion_prob", 0.0) or 0.0)
         self._promotion_min_layers = int(getattr(self.cfg, "promotion_min_layers", 0) or 0)
-        self._promotion_min_moe_blocks = int(
-            getattr(self.cfg, "promotion_min_moe_blocks", 0) or 0
-        )
+        self._promotion_min_moe_blocks = int(getattr(self.cfg, "promotion_min_moe_blocks", 0) or 0)
         self._promotion_steps_multiplier = float(
             getattr(self.cfg, "promotion_steps_multiplier", 1.0) or 1.0
         )
         self._promotion_tokens_multiplier = float(
             getattr(self.cfg, "promotion_tokens_multiplier", 1.0) or 1.0
         )
+        self._promotion_min_router_entropy = float(
+            getattr(self.cfg, "promotion_min_router_entropy", 0.0) or 0.0
+        )
+        self._promotion_min_recurrence_gain = float(
+            getattr(self.cfg, "promotion_min_recurrence_gain", 0.0) or 0.0
+        )
+        self._promotion_max_instability = getattr(self.cfg, "promotion_max_instability", None)
 
     def run(self, generations: int) -> list[Candidate]:
         base_candidate = Candidate(
@@ -229,6 +237,16 @@ class EvolutionRunner:
             return False
         if moe_blocks < self._promotion_min_moe_blocks:
             return False
+        router_entropy = candidate.metrics.get("router_entropy")
+        if router_entropy is not None and router_entropy < self._promotion_min_router_entropy:
+            return False
+        recurrence_gain = candidate.metrics.get("recurrence_gain")
+        if recurrence_gain is not None and recurrence_gain < self._promotion_min_recurrence_gain:
+            return False
+        if self._promotion_max_instability is not None:
+            instability = candidate.metrics.get("instability")
+            if instability is not None and instability > self._promotion_max_instability:
+                return False
         if self.rng.random() > self._promotion_prob:
             return False
         return True
@@ -284,6 +302,23 @@ class EvolutionRunner:
                     diff += 0.5
                 if (ba.attn.rope or None) != (bb.attn.rope or None):
                     diff += 0.5
+                if ba.attn.sparsity != bb.attn.sparsity:
+                    diff += 0.5
+                if (ba.attn.sw or None) != (bb.attn.sw or None):
+                    diff += 0.25
+                if (ba.attn.global_stride or None) != (bb.attn.global_stride or None):
+                    diff += 0.25
+                if (ba.attn.block_size or None) != (bb.attn.block_size or None):
+                    diff += 0.25
+                if (ba.attn.block_stride or None) != (bb.attn.block_stride or None):
+                    diff += 0.25
+        # Recurrence differences matter for novelty
+        rec_a = [(r.start, r.end, r.adapter, r.concat_prelude) for r in a.model.recurrences]
+        rec_b = [(r.start, r.end, r.adapter, r.concat_prelude) for r in b.model.recurrences]
+        diff += abs(len(rec_a) - len(rec_b)) * 0.5
+        for idx in range(min(len(rec_a), len(rec_b))):
+            if rec_a[idx] != rec_b[idx]:
+                diff += 0.5
         denom = max(1.0, 0.5 * float(la + lb))
         return float(diff) / denom
 
@@ -365,6 +400,43 @@ class EvolutionRunner:
         except Exception:
             return None
         return None
+
+    @staticmethod
+    def _default_composites() -> list[CompositeMetricConfig]:
+        return [
+            CompositeMetricConfig(
+                name="ppl_per_long_recall",
+                op="ratio",
+                numerator="ppl_code",
+                denominator="long_recall",
+                epsilon=1e-3,
+            ),
+            CompositeMetricConfig(
+                name="ppl_per_param",
+                op="ratio",
+                numerator="ppl_code",
+                denominator="params",
+                epsilon=1e-6,
+            ),
+            CompositeMetricConfig(
+                name="ppl_per_throughput",
+                op="ratio",
+                numerator="ppl_code",
+                denominator="throughput",
+                epsilon=1e-6,
+            ),
+        ]
+
+    @staticmethod
+    def _merge_composites(
+        primary: list[CompositeMetricConfig], defaults: list[CompositeMetricConfig]
+    ) -> list[CompositeMetricConfig]:
+        existing = {comp.name for comp in primary}
+        merged = list(primary)
+        for comp in defaults:
+            if comp.name not in existing:
+                merged.append(comp)
+        return merged
 
     def _select_parent(self) -> Candidate:
         strategy = getattr(self.cfg, "parent_selection", "weighted")

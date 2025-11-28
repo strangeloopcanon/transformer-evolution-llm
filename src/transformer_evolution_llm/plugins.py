@@ -9,7 +9,6 @@ present in the config.
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import Protocol
 
 from .dsl import CustomModuleConfig
@@ -18,8 +17,7 @@ from .dsl import CustomModuleConfig
 class ComponentBuilder(Protocol):
     """Callable that builds a module for a custom component."""
 
-    def __call__(self, cfg: CustomModuleConfig, dim: int):
-        ...
+    def __call__(self, cfg: CustomModuleConfig, dim: int): ...
 
 
 _REGISTRY: dict[str, ComponentBuilder] = {}
@@ -47,4 +45,3 @@ def get_component(name: str) -> ComponentBuilder | None:
 def list_components() -> list[str]:
     """Return the list of registered component names."""
     return sorted(_REGISTRY)
-

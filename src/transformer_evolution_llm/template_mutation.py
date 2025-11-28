@@ -38,7 +38,8 @@ class TemplateAction(TypedDict, total=False):
     capacity_factor: float
     # Tuning knobs
     qk_norm_max: float | None
-    gated: bool | None
+    gating_pos: str | None
+    gating_op: str | None
     sw_jitter: int
     temperature: float
     lb_coeff: float
@@ -365,7 +366,8 @@ def _generate_random_template(spec: ArchitectureSpec, rng: random.Random) -> Mut
                 "tune_attn": {
                     "selector": rng.choice(["random", "random_ssm", "random_dense", "random_moe"]),
                     "qk_norm_max": rng.choice([None, rng.uniform(5.0, 12.0)]),
-                    "gated": rng.choice([True, False]) if rng.random() < 0.3 else None,
+                    "gating_pos": rng.choice(["none", "output", "value"]) if rng.random() < 0.3 else None,
+                    "gating_op": rng.choice(["dense", "diagonal"]) if rng.random() < 0.3 else None,
                     "sw_jitter": rng.choice([-64, -32, 0, 32, 64]),
                     "sparsity": rng.choice(
                         ["none", "sliding", "block", "local_global", "dilated", "local_block"]
@@ -412,8 +414,10 @@ def _tune_attn(spec: ArchitectureSpec, params: dict[str, Any], rng: random.Rando
     qk_val = params.get("qk_norm_max")
     if qk_val is not None:
         block.attn.qk_norm_max = float(qk_val)
-    if "gated" in params and params["gated"] is not None:
-        block.attn.gated = bool(params["gated"])
+    if "gating_pos" in params and params["gating_pos"] is not None:
+        block.attn.gating_pos = params["gating_pos"]
+    if "gating_op" in params and params["gating_op"] is not None:
+        block.attn.gating_op = params["gating_op"]
     sw_jitter = int(params.get("sw_jitter", 0))
     if sw_jitter != 0:
         current = block.attn.sw or spec.data.seq_len // 8

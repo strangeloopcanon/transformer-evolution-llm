@@ -36,9 +36,16 @@ class DataModule:
         def __init__(self, module: DataModule, max_tokens: int | None) -> None:
             self.module = module
             self.max_tokens = max_tokens
+            self._iter: Iterator[TokenBatch] | None = None
 
         def __iter__(self) -> Iterator[TokenBatch]:
-            return self.module._batch_generator(self.max_tokens)
+            self._iter = self.module._batch_generator(self.max_tokens)
+            return self
+
+        def __next__(self) -> TokenBatch:
+            if self._iter is None:
+                self._iter = self.module._batch_generator(self.max_tokens)
+            return next(self._iter)
 
     def batches(self, max_tokens: int | None = None) -> Iterable[TokenBatch]:
         """Return a re-iterable object so training/eval can get fresh iterators."""
@@ -46,12 +53,8 @@ class DataModule:
 
     def _batch_generator(self, max_tokens: int | None) -> Iterator[TokenBatch]:
         budget = max_tokens
-        healing_tokens = (
-            self.cfg.healing_tokens if self.cfg.healing_shards else None
-        )
-        healing_iter = (
-            self._cycle_shards(self.cfg.healing_shards) if healing_tokens else None
-        )
+        healing_tokens = self.cfg.healing_tokens if self.cfg.healing_shards else None
+        healing_iter = self._cycle_shards(self.cfg.healing_shards) if healing_tokens else None
         main_iter = self._cycle_shards(self.cfg.shards)
         current_iter: Iterator[TokenBatch]
         if healing_iter is not None:

@@ -14,6 +14,7 @@ from pydantic import (
     ValidationError,
     ValidationInfo,
     field_validator,
+    model_validator,
 )
 
 
@@ -40,7 +41,8 @@ class AttentionConfig(BaseModel):
     # Stability knobs (optional, evolvable)
     qk_norm_max: float | None = Field(default=None, gt=0.0)
     # Architectural innovations
-    gated: bool = False
+    gating_pos: Literal["none", "output", "value"] = "none"
+    gating_op: Literal["dense", "diagonal"] = "dense"
     # Sparsity pattern (optional)
     sparsity: Literal["none", "sliding", "block", "local_global", "dilated", "local_block"] = "none"
     block_size: int | None = Field(default=None, gt=0)
@@ -49,7 +51,17 @@ class AttentionConfig(BaseModel):
     global_stride: int | None = Field(default=None, gt=0)
     dilation: int | None = Field(default=None, gt=0)
 
-    model_config = {"populate_by_name": True}
+    model_config = {"populate_by_name": True, "extra": "ignore"}
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_gated_field(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "gated" in data:
+            gated = data.pop("gated")
+            if gated and not data.get("gating_pos"):
+                data["gating_pos"] = "output"
+            data.setdefault("gating_op", "dense")
+        return data
 
     @property
     def hidden_dim(self) -> int:
@@ -108,7 +120,6 @@ MoEExpertConfig = Annotated[
     MoEDenseExpertConfig | MoESSMExpertConfig | MoECustomExpertConfig,
     Field(discriminator="type"),
 ]
-
 
 
 FfnConfig = Annotated[DenseFFNConfig | MoEFFNConfig, Field(discriminator="type")]
@@ -319,13 +330,16 @@ class EvolutionConfig(BaseModel):
         default_factory=lambda: ["ppl_code", "ppl_math", "long_recall", "throughput", "ram"]
     )
     objectives: dict[str, Literal["max", "min"]] | None = None
-    composite_metrics: list["CompositeMetricConfig"] = Field(default_factory=list)
+    composite_metrics: list[CompositeMetricConfig] = Field(default_factory=list)
     # Optional promotion rung for high-budget candidates (live mode only)
     promotion_prob: float = Field(default=0.0, ge=0.0, le=1.0)
     promotion_min_layers: int = Field(default=0, ge=0)
     promotion_min_moe_blocks: int = Field(default=0, ge=0)
     promotion_steps_multiplier: float = Field(default=1.0, ge=1.0)
     promotion_tokens_multiplier: float = Field(default=1.0, ge=1.0)
+    promotion_min_router_entropy: float = Field(default=0.0, ge=0.0)
+    promotion_min_recurrence_gain: float = Field(default=0.0)
+    promotion_max_instability: float | None = Field(default=None, ge=0.0)
 
 
 class PriorConfig(BaseModel):

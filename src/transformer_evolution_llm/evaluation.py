@@ -96,8 +96,13 @@ class StaticChecker:
                 and block.attn.block_size > spec.data.seq_len
             ):
                 reasons.append("block_size exceeds seq_len")
+            if block.attn and block.attn.block_stride is not None:
+                if block.attn.block_stride <= 0 or block.attn.block_stride > spec.data.seq_len:
+                    reasons.append("block_stride must be in (0, seq_len]")
             if block.attn and block.attn.sw is not None and block.attn.sw <= 0:
                 reasons.append("sliding_window must be > 0")
+            if block.attn and block.attn.sw is not None and block.attn.sw > spec.data.seq_len:
+                reasons.append("sliding_window exceeds seq_len")
             if block.attn and block.attn.sparsity == "local_global":
                 if block.attn.sw is None or block.attn.sw <= 0:
                     reasons.append("local_global requires positive sliding_window (sw)")
@@ -112,6 +117,12 @@ class StaticChecker:
                     reasons.append("local_block requires sliding_window (sw)")
                 if block.attn.block_size is None or block.attn.block_size <= 0:
                     reasons.append("local_block requires block_size > 0")
+                if (
+                    block.attn.block_stride is None
+                    or block.attn.block_stride <= 0
+                    or block.attn.block_stride > spec.data.seq_len
+                ):
+                    reasons.append("local_block requires 0 < block_stride <= seq_len")
             if block.attn and block.attn.dilation is not None and block.attn.dilation <= 0:
                 reasons.append("dilation must be > 0 when using dilated sparsity")
         if params > self.max_params:

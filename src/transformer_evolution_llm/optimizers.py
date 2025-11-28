@@ -67,9 +67,7 @@ class Lion(Optimizer):
         return loss
 
 
-def build_optimizer(
-    params: Iterable[torch.nn.Parameter], schedule: TrainSchedule
-) -> Optimizer:
+def build_optimizer(params: Iterable[torch.nn.Parameter], schedule: TrainSchedule) -> Optimizer:
     cfg: OptimizerConfig = getattr(schedule, "optimizer", OptimizerConfig())
     name = (cfg.name or "adamw").lower()
     # Effective hparams: optimizer overrides or fall back to TrainSchedule

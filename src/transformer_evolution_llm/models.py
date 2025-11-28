@@ -16,7 +16,10 @@ from .dsl import (
     CustomModuleConfig,
     GatedModuleConfig,
     ModelConfig,
+    MoECustomExpertConfig,
+    MoEDenseExpertConfig,
     MoEFFNConfig,
+    MoESSMExpertConfig,
     RecurrenceConfig,
     RetroConfig,
     SSMConfig,
@@ -87,13 +90,21 @@ class MultiHeadSelfAttention(nn.Module):
         self.c_attn = nn.Linear(dim, (self.heads + 2 * self.n_kv_heads) * self.head_dim, bias=True)
         self.c_proj = nn.Linear(self.heads * self.head_dim, dim, bias=True)
 
-        self.gated = getattr(cfg, "gated", False)
-        if self.gated:
-            # Head-specific gating: G_h = Sigmoid(Q_h W_h + b_h)
-            # We use a parameter for weights W_h (heads, head_dim, head_dim)
-            self.gate_weight = nn.Parameter(torch.empty(self.heads, self.head_dim, self.head_dim))
+        self.gating_pos = getattr(cfg, "gating_pos", "none")
+        self.gating_op = getattr(cfg, "gating_op", "dense")
+
+        if self.gating_pos != "none":
+            # Head-specific gating: G_h = Sigmoid(Op(Q_h))
+            if self.gating_op == "dense":
+                # Weights: (heads, head_dim, head_dim)
+                self.gate_weight = nn.Parameter(torch.empty(self.heads, self.head_dim, self.head_dim))
+                nn.init.kaiming_uniform_(self.gate_weight, a=math.sqrt(5))
+            else:
+                # Diagonal gating weights: (heads, head_dim)
+                self.gate_weight = nn.Parameter(torch.empty(self.heads, self.head_dim))
+                nn.init.uniform_(self.gate_weight, -0.1, 0.1)
+
             self.gate_bias = nn.Parameter(torch.zeros(self.heads, self.head_dim))
-            nn.init.kaiming_uniform_(self.gate_weight, a=math.sqrt(5))
 
         self.rope = (
             RotaryPositionalEncoding(cfg.head_dim, float(cfg.rope_theta or 10000.0))
@@ -200,17 +211,28 @@ class MultiHeadSelfAttention(nn.Module):
 
         # Calculate Gate if enabled
         gate = None
-        if self.gated:
-            # q is (B, H, T, D). gate_weight is (H, D, D). gate_bias is (H, D)
-            # We want G = Sigmoid(Q @ W + b) per head.
-            # Q[b,h,t,:] @ W[h,:,:] -> (B, H, T, D)
-            # Use einsum
-            g = torch.einsum("bhtd,hde->bhte", q, self.gate_weight) + self.gate_bias.unsqueeze(0).unsqueeze(2)
-            gate = torch.sigmoid(g)
+        if self.gating_pos != "none":
+            # q is (B, H, T, D). gate_bias is (H, D)
+            if self.gating_op == "dense":
+                # gate_weight is (H, D, D)
+                # Q[b,h,t,:] @ W[h,:,:] -> (B, H, T, D)
+                g = torch.einsum("bhtd,hde->bhte", q, self.gate_weight)
+            else:
+                # gate_weight is (H, D)
+                # Expand to broadcast against q: (1, H, 1, D)
+                gw = self.gate_weight.unsqueeze(0).unsqueeze(2)
+                g = q * gw
+
+            gb = self.gate_bias.unsqueeze(0).unsqueeze(2)
+            gate = torch.sigmoid(g + gb)
+
+        # Optionally gate values before attention
+        if gate is not None and self.gating_pos == "value":
+            v = v * gate
 
         out = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask)
 
-        if gate is not None:
+        if gate is not None and self.gating_pos == "output":
             out = out * gate
 
         # Transpose back: (B, T, H, D)
@@ -259,15 +281,14 @@ class MoELayer(nn.Module):
                     ecfg = cfg.experts[idx]
                 else:
                     ecfg = cfg.experts[-1]
-                etype = getattr(ecfg, "type", "dense")
-                if etype == "dense":
-                    hidden = ecfg.hidden or cfg.hidden  # type: ignore[union-attr]
-                    hops = getattr(ecfg, "hops", 1)
-                    self.experts.append(Expert(dim, hidden, activation=ecfg.activation, hops=hops))  # type: ignore[arg-type]
-                elif etype == "ssm":
+                if isinstance(ecfg, MoEDenseExpertConfig):
+                    hidden = ecfg.hidden or cfg.hidden
+                    hops = ecfg.hops
+                    self.experts.append(Expert(dim, hidden, activation=ecfg.activation, hops=hops))
+                elif isinstance(ecfg, MoESSMExpertConfig):
                     # Wrap SSMLayer as an expert, possibly with multiple hops.
-                    hops = getattr(ecfg, "hops", 1)
-                    ssm_layer = SSMLayer(ecfg.ssm, dim)  # type: ignore[union-attr]
+                    hops = ecfg.hops
+                    ssm_layer = SSMLayer(ecfg.ssm, dim)
 
                     class _SSMExpert(nn.Module):
                         def __init__(self, layer: SSMLayer, num_hops: int) -> None:
@@ -275,15 +296,15 @@ class MoELayer(nn.Module):
                             self.layer = layer
                             self.hops = max(1, num_hops)
 
-                        def forward(self, x: Tensor) -> Tensor:  # type: ignore[override]
+                        def forward(self, x: Tensor) -> Tensor:
                             for _ in range(self.hops):
                                 x = self.layer(x)
                             return x
 
                     self.experts.append(_SSMExpert(ssm_layer, hops))
-                elif etype == "custom":
+                elif isinstance(ecfg, MoECustomExpertConfig):
                     # Use CustomModule to build a custom expert if possible.
-                    custom_cfg = CustomModuleConfig(name=ecfg.name, params=ecfg.params)  # type: ignore[union-attr]
+                    custom_cfg = CustomModuleConfig(name=ecfg.name, params=ecfg.params)
                     self.experts.append(CustomModule(custom_cfg, dim))
                 else:
                     # Fallback to a standard dense expert.
@@ -515,9 +536,7 @@ class EvolutionModel(nn.Module):
             h = state
             for block_idx in range(start_idx, end_idx):
                 h = self.blocks[block_idx](h)
-            adapter_input = (
-                torch.cat([prelude_output, h], dim=-1) if rec_cfg.concat_prelude else h
-            )
+            adapter_input = torch.cat([prelude_output, h], dim=-1) if rec_cfg.concat_prelude else h
             state = adapter(adapter_input, h)
         return state
 

@@ -28,12 +28,8 @@ def test_qk_norm_max_clamps_queries() -> None:
 
     x = torch.randn(2, 4, dim) * 10.0
 
-    # Replace c_attn with CaptureModule
-    # Output dim for c_attn is (H + 2*H_kv)*D = (2+2+2)*4 = 24
     capture_mod = CaptureModule(24)
     module.c_attn = capture_mod
-
-    # Mock c_proj and SDPA to allow forward pass to complete
     module.c_proj = CaptureModule(dim)
 
     with patch("torch.nn.functional.scaled_dot_product_attention", return_value=torch.zeros(2, 2, 4, 4)):
@@ -53,12 +49,10 @@ def test_sliding_sparsity_builds_local_window_mask() -> None:
     x = torch.randn(1, t, dim)
 
     with patch("torch.nn.functional.scaled_dot_product_attention") as mock_sdpa:
-        # Mock return (B, H, T, D)
         mock_sdpa.return_value = torch.zeros(1, 2, t, 4)
         _ = module(x)
 
         args, kwargs = mock_sdpa.call_args
-        # attn_mask is passed as kwarg
         mask = kwargs.get("attn_mask")
         assert mask is not None
         assert mask.shape == (t, t)
@@ -66,10 +60,8 @@ def test_sliding_sparsity_builds_local_window_mask() -> None:
         for i in range(t):
             lo = max(0, i - 1)
             hi = min(t, i + 2)
-            # Positions inside the window should be unmasked (0.0).
             window = mask[i, lo:hi]
             assert torch.all(window == 0.0)
-            # Positions outside should be masked (-inf).
             if lo > 0:
                 assert torch.all(torch.isneginf(mask[i, :lo]))
             if hi < t:
@@ -97,8 +89,6 @@ def test_block_sparsity_masks_cross_block_attention() -> None:
         mask = mock_sdpa.call_args.kwargs.get("attn_mask")
         assert mask is not None
         assert mask.shape == (t, t)
-        # Tokens 0-1, 2-3, 4-5 form separate blocks.
-        # Check that token 0 cannot attend to token 2 (masked) but can attend to token 1.
         assert mask[0, 1] == 0.0
         assert torch.isneginf(mask[0, 2])
 
@@ -123,7 +113,6 @@ def test_dilated_sparsity_masks_every_other_token() -> None:
         mask = mock_sdpa.call_args.kwargs.get("attn_mask")
         assert mask is not None
 
-        # Token 0 attends only to even positions; token 1 to odd positions.
         even_positions = [0, 2, 4]
         odd_positions = [1, 3, 5]
         for j in even_positions:
@@ -137,17 +126,29 @@ def test_dilated_sparsity_masks_every_other_token() -> None:
 
 
 def test_gated_attention_logic() -> None:
-    """Verify that gating parameters are created and used."""
-    cfg = AttentionConfig(heads=2, head_dim=4, gated=True)
+    """Verify that gating parameters are created and used for variants."""
+    # Variant 1: Output gating, Dense
+    cfg = AttentionConfig(heads=2, head_dim=4, gating_pos="output", gating_op="dense")
     dim = cfg.heads * cfg.head_dim
     module = MultiHeadSelfAttention(cfg, dim)
 
     assert hasattr(module, "gate_weight")
-    assert hasattr(module, "gate_bias")
     assert module.gate_weight.shape == (2, 4, 4)
     assert module.gate_bias.shape == (2, 4)
 
     x = torch.randn(1, 4, dim)
-    # Just run forward to ensure no crash
+    out = module(x)
+    assert out.shape == (1, 4, dim)
+
+    # Variant 2: Value gating, Diagonal
+    cfg = AttentionConfig(heads=2, head_dim=4, gating_pos="value", gating_op="diagonal")
+    dim = cfg.heads * cfg.head_dim
+    module = MultiHeadSelfAttention(cfg, dim)
+
+    assert hasattr(module, "gate_weight")
+    assert module.gate_weight.shape == (2, 4)  # Diagonal
+    assert module.gate_bias.shape == (2, 4)
+
+    x = torch.randn(1, 4, dim)
     out = module(x)
     assert out.shape == (1, 4, dim)

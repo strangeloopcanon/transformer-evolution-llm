@@ -156,7 +156,8 @@ def tune_kv(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
     if not blocks:
         return child
     b = rng.choice(blocks)
-    assert b.attn is not None
+    if b.attn is None:
+        return child
     heads = max(1, int(b.attn.heads))
     choices = [k for k in [1, 2, 4, 8] if k <= heads]
     if not choices:
@@ -171,7 +172,8 @@ def tune_rope(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
     if not blocks:
         return child
     b = rng.choice(blocks)
-    assert b.attn is not None
+    if b.attn is None:
+        return child
     # Ensure rope is enabled; jitter rope_theta
     if b.attn.rope is None:
         b.attn.rope = "yarn"
@@ -212,30 +214,39 @@ def tune_recurrence(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureS
         rec.train_recurrence,
         int(rec.max_train_recurrence + rng.choice([-1, 0, 2])),
     )
-    rec.curriculum_fraction = max(
-        0.0, min(1.0, rec.curriculum_fraction + rng.uniform(-0.1, 0.1))
-    )
+    rec.curriculum_fraction = max(0.0, min(1.0, rec.curriculum_fraction + rng.uniform(-0.1, 0.1)))
     rec.concat_prelude = rng.choice([True, rec.concat_prelude])
     rec.adapter = rng.choice(["linear", "gated"])
     rec.init_state = rng.choice(["zeros", "noise"])
     return child
 
 
-def toggle_attn_gating(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
+def tune_attn_gating(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
     child = clone_spec(spec)
     blocks = [b for b in child.model.blocks if b.attn is not None]
     if not blocks:
         return child
     b = rng.choice(blocks)
     assert b.attn is not None
-    # Toggle the gated flag (defaulting to False if missing)
-    current = getattr(b.attn, "gated", False)
-    b.attn.gated = not current
+
+    if b.attn.gating_pos == "none":
+        # Enable gating with a random position/op
+        b.attn.gating_pos = rng.choice(["output", "value"])
+        b.attn.gating_op = rng.choice(["dense", "diagonal"])
+    else:
+        # 33% chance turn off, 66% chance change params
+        if rng.random() < 0.33:
+            b.attn.gating_pos = "none"
+        else:
+            if rng.random() < 0.5:
+                b.attn.gating_pos = rng.choice(["output", "value"])
+            else:
+                b.attn.gating_op = rng.choice(["dense", "diagonal"])
     return child
 
 
 REGISTRY: dict[str, MutationFn] = {
-    "toggle_attn_gating": toggle_attn_gating,
+    "tune_attn_gating": tune_attn_gating,
     "dense_to_moe": dense_to_moe,
     "mutate_topk": mutate_topk,
     "shift_moe": shift_moe,

@@ -83,9 +83,7 @@ class FullWeightTrainer:
         total_steps = max(1, self.steps)
         for step_idx in range(self.steps):
             if spec.model.recurrences:
-                model.set_recurrence_steps(
-                    self._recurrence_schedule(spec, step_idx, total_steps)
-                )
+                model.set_recurrence_steps(self._recurrence_schedule(spec, step_idx, total_steps))
             try:
                 batch = next(iterator)
             except StopIteration:
@@ -147,9 +145,7 @@ class FullWeightTrainer:
                     break
         duration = max(time.perf_counter() - start_time, 1e-6)
         throughput = tokens_seen / duration
-        model.set_recurrence_steps(
-            self._recurrence_schedule(spec, self.steps, total_steps)
-        )
+        model.set_recurrence_steps(self._recurrence_schedule(spec, self.steps, total_steps))
         perplexity = self._evaluate_perplexity(model, spec, batch_iter, criterion)
         checkpoint_path = self.checkpoint_dir / f"{candidate.ident}.pt"
         torch.save(model.state_dict(), checkpoint_path)
@@ -158,6 +154,7 @@ class FullWeightTrainer:
         router_lb = 0.0
         router_load_max = 0.0
         router_load_min = 1.0
+        router_load_cv = 0.0
         max_grad_norm = 0.0
         try:
             if hasattr(grad_total, "item"):
@@ -175,14 +172,15 @@ class FullWeightTrainer:
                     if hasattr(mod, "last_lb"):
                         router_lb += float(mod.last_lb.item())
                     if hasattr(mod, "last_load"):
-                        load = getattr(mod, "last_load")
-                        try:
-                            max_val = float(load.max().item())
-                            min_val = float(load.min().item())
-                            router_load_max = max(router_load_max, max_val)
-                            router_load_min = min(router_load_min, min_val)
-                        except Exception:
-                            pass
+                        load = mod.last_load
+                        max_val = float(load.max().item())
+                        min_val = float(load.min().item())
+                        mean_val = float(load.mean().item())
+                        std_val = float(load.std().item())
+                        router_load_max = max(router_load_max, max_val)
+                        router_load_min = min(router_load_min, min_val)
+                        if mean_val > 0.0:
+                            router_load_cv = max(router_load_cv, std_val / max(mean_val, 1e-9))
                     count += 1
         if count:
             router_entropy /= count
@@ -207,6 +205,7 @@ class FullWeightTrainer:
             "router_lb": router_lb,
             "router_load_max": router_load_max,
             "router_load_min": router_load_min,
+            "router_load_cv": router_load_cv,
             "max_grad_norm": max_grad_norm,
             "instability": max_grad_norm,
             "stop_reason_code": reason_code,
