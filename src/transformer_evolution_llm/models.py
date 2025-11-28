@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from typing import cast
 
@@ -78,13 +79,30 @@ class MultiHeadSelfAttention(nn.Module):
     def __init__(self, cfg: AttentionConfig, dim: int):
         super().__init__()
         self.cfg = cfg
-        self.attn = nn.MultiheadAttention(
-            embed_dim=dim,
-            num_heads=cfg.heads,
-            batch_first=True,
-        )
         self.heads = cfg.heads
         self.head_dim = cfg.head_dim
+        self.kv_groups = cfg.kv_groups or 1
+        self.n_kv_heads = max(1, self.heads // self.kv_groups)
+
+        self.c_attn = nn.Linear(dim, (self.heads + 2 * self.n_kv_heads) * self.head_dim, bias=True)
+        self.c_proj = nn.Linear(self.heads * self.head_dim, dim, bias=True)
+
+        self.gating_pos = getattr(cfg, "gating_pos", "none")
+        self.gating_op = getattr(cfg, "gating_op", "dense")
+
+        if self.gating_pos != "none":
+            # Head-specific gating: G_h = Sigmoid(Op(Q_h))
+            if self.gating_op == "dense":
+                # Weights: (heads, head_dim, head_dim)
+                self.gate_weight = nn.Parameter(torch.empty(self.heads, self.head_dim, self.head_dim))
+                nn.init.kaiming_uniform_(self.gate_weight, a=math.sqrt(5))
+            else:
+                # Diagonal: Weights: (heads, head_dim)
+                self.gate_weight = nn.Parameter(torch.empty(self.heads, self.head_dim))
+                nn.init.uniform_(self.gate_weight, -0.1, 0.1)
+
+            self.gate_bias = nn.Parameter(torch.zeros(self.heads, self.head_dim))
+
         self.rope = (
             RotaryPositionalEncoding(cfg.head_dim, float(cfg.rope_theta or 10000.0))
             if cfg.rope
@@ -100,14 +118,26 @@ class MultiHeadSelfAttention(nn.Module):
             norms = x.norm(dim=-1, keepdim=True).clamp_min(eps)
             scale = (max_norm / norms).clamp(max=1.0)
             x = x * scale
+
+        b, t, d = x.shape
+        qkv = self.c_attn(x)
+        # Split Q, K, V
+        # q: (b, t, heads, head_dim)
+        # k, v: (b, t, kv_heads, head_dim)
+        q_size = self.heads * self.head_dim
+        kv_size = self.n_kv_heads * self.head_dim
+        q, k, v = torch.split(qkv, [q_size, kv_size, kv_size], dim=-1)
+
+        q = q.view(b, t, self.heads, self.head_dim)
+        k = k.view(b, t, self.n_kv_heads, self.head_dim)
+        v = v.view(b, t, self.n_kv_heads, self.head_dim)
+
         if self.rope is not None:
-            b, t, d = x.shape
-            x_reshaped = x.view(b, t, self.heads, self.head_dim)
-            rope = self.rope(t, x.device)
-            x_rot = RotaryPositionalEncoding.apply_rotary(x_reshaped, rope)
-            x = x_rot.view(b, t, d)
+            rope_emb = self.rope(t, x.device)
+            q = RotaryPositionalEncoding.apply_rotary(q, rope_emb)
+            k = RotaryPositionalEncoding.apply_rotary(k, rope_emb)
+
         attn_mask = None
-        t = x.size(1)
         sparsity = getattr(self.cfg, "sparsity", "none")
 
         def ensure_mask() -> torch.Tensor:
@@ -164,22 +194,49 @@ class MultiHeadSelfAttention(nn.Module):
                     lo = max(0, i - w)
                     hi = min(t, i + w + 1)
                     mask[i, lo:hi] = 0.0
-        # Prefer CUDA SDPA kernels when available (capability, not a search knob)
-        if torch.backends.cuda.is_built() and x.is_cuda:
-            try:
-                ctx = torch.backends.cuda.sdp_kernel(
-                    enable_flash=True, enable_mem_efficient=True, enable_math=True
-                )
-                if not self._impl_logged:
-                    print("[attention] Using CUDA SDPA kernels (flash/mem-efficient enabled)")
-                    self._impl_logged = True
-                with ctx:
-                    out, _ = self.attn(x, x, x, need_weights=False, attn_mask=attn_mask)
-            except Exception:
-                out, _ = self.attn(x, x, x, need_weights=False, attn_mask=attn_mask)
-        else:
-            out, _ = self.attn(x, x, x, need_weights=False, attn_mask=attn_mask)
-        return cast(Tensor, out)
+
+        # Adjust for GQA if needed (manual repeat)
+        if self.n_kv_heads != self.heads:
+            # simple repeat_interleave
+            k = k.repeat_interleave(self.heads // self.n_kv_heads, dim=2)
+            v = v.repeat_interleave(self.heads // self.n_kv_heads, dim=2)
+
+        # Transpose for SDPA: (B, H, T, D)
+        q = q.transpose(1, 2)
+        k = k.transpose(1, 2)
+        v = v.transpose(1, 2)
+
+        # Calculate Gate if enabled
+        gate = None
+        if self.gating_pos != "none":
+            # q is (B, H, T, D). gate_bias is (H, D)
+            if self.gating_op == "dense":
+                 # gate_weight is (H, D, D)
+                 # Q[b,h,t,:] @ W[h,:,:] -> (B, H, T, D)
+                 g = torch.einsum("bhtd,hde->bhte", q, self.gate_weight)
+            else:
+                 # gate_weight is (H, D)
+                 # Expand to broadcast against q: (1, H, 1, D)
+                 gw = self.gate_weight.unsqueeze(0).unsqueeze(2)
+                 g = q * gw
+
+            gb = self.gate_bias.unsqueeze(0).unsqueeze(2)
+            gate = torch.sigmoid(g + gb)
+
+        # Apply gate if Value
+        if gate is not None and self.gating_pos == "value":
+            v = v * gate
+
+        out = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask)
+
+        # Apply gate if Output
+        if gate is not None and self.gating_pos == "output":
+            out = out * gate
+
+        # Transpose back: (B, T, H, D)
+        out = out.transpose(1, 2).contiguous()
+        out = out.view(b, t, self.heads * self.head_dim)
+        return cast(Tensor, self.c_proj(out))
 
 
 class DenseFFN(nn.Module):

@@ -39,6 +39,9 @@ class AttentionConfig(BaseModel):
     dropout: float = Field(default=0.0, ge=0.0, le=1.0)
     # Stability knobs (optional, evolvable)
     qk_norm_max: float | None = Field(default=None, gt=0.0)
+    # Architectural innovations
+    gating_pos: Literal["none", "output", "value"] = "none"
+    gating_op: Literal["dense", "diagonal"] = "dense"
     # Sparsity pattern (optional)
     sparsity: Literal["none", "sliding", "block", "local_global", "dilated", "local_block"] = "none"
     block_size: int | None = Field(default=None, gt=0)

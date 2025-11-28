@@ -221,7 +221,33 @@ def tune_recurrence(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureS
     return child
 
 
+def tune_attn_gating(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
+    child = clone_spec(spec)
+    blocks = [b for b in child.model.blocks if b.attn is not None]
+    if not blocks:
+        return child
+    b = rng.choice(blocks)
+    assert b.attn is not None
+
+    if b.attn.gating_pos == "none":
+        # Enable it
+        b.attn.gating_pos = rng.choice(["output", "value"])
+        b.attn.gating_op = rng.choice(["dense", "diagonal"])
+    else:
+        # 33% chance turn off, 66% chance change params
+        if rng.random() < 0.33:
+            b.attn.gating_pos = "none"
+        else:
+            # Switch position or op
+            if rng.random() < 0.5:
+                b.attn.gating_pos = rng.choice(["output", "value"])
+            else:
+                b.attn.gating_op = rng.choice(["dense", "diagonal"])
+    return child
+
+
 REGISTRY: dict[str, MutationFn] = {
+    "tune_attn_gating": tune_attn_gating,
     "dense_to_moe": dense_to_moe,
     "mutate_topk": mutate_topk,
     "shift_moe": shift_moe,
