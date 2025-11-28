@@ -97,7 +97,9 @@ class MultiHeadSelfAttention(nn.Module):
             # Head-specific gating: G_h = Sigmoid(Op(Q_h))
             if self.gating_op == "dense":
                 # Weights: (heads, head_dim, head_dim)
-                self.gate_weight = nn.Parameter(torch.empty(self.heads, self.head_dim, self.head_dim))
+                self.gate_weight = nn.Parameter(
+                    torch.empty(self.heads, self.head_dim, self.head_dim)
+                )
                 nn.init.kaiming_uniform_(self.gate_weight, a=math.sqrt(5))
             else:
                 # Diagonal gating weights: (heads, head_dim)

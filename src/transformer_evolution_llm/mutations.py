@@ -227,7 +227,8 @@ def tune_attn_gating(spec: ArchitectureSpec, rng: random.Random) -> Architecture
     if not blocks:
         return child
     b = rng.choice(blocks)
-    assert b.attn is not None
+    if b.attn is None:
+        return child
 
     if b.attn.gating_pos == "none":
         # Enable gating with a random position/op

@@ -3,7 +3,7 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import torch
-from torch import nn, Tensor
+from torch import Tensor, nn
 
 from transformer_evolution_llm.dsl import AttentionConfig
 from transformer_evolution_llm.models import MultiHeadSelfAttention
@@ -32,7 +32,9 @@ def test_qk_norm_max_clamps_queries() -> None:
     module.c_attn = capture_mod
     module.c_proj = CaptureModule(dim)
 
-    with patch("torch.nn.functional.scaled_dot_product_attention", return_value=torch.zeros(2, 2, 4, 4)):
+    with patch(
+        "torch.nn.functional.scaled_dot_product_attention", return_value=torch.zeros(2, 2, 4, 4)
+    ):
         _ = module(x)
 
     assert capture_mod.last_input is not None

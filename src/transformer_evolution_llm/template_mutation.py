@@ -366,7 +366,9 @@ def _generate_random_template(spec: ArchitectureSpec, rng: random.Random) -> Mut
                 "tune_attn": {
                     "selector": rng.choice(["random", "random_ssm", "random_dense", "random_moe"]),
                     "qk_norm_max": rng.choice([None, rng.uniform(5.0, 12.0)]),
-                    "gating_pos": rng.choice(["none", "output", "value"]) if rng.random() < 0.3 else None,
+                    "gating_pos": (
+                        rng.choice(["none", "output", "value"]) if rng.random() < 0.3 else None
+                    ),
                     "gating_op": rng.choice(["dense", "diagonal"]) if rng.random() < 0.3 else None,
                     "sw_jitter": rng.choice([-64, -32, 0, 32, 64]),
                     "sparsity": rng.choice(
