@@ -435,12 +435,12 @@ data:
   healing_tokens: null
 evolution:
   rung0_thresholds:
-    gate_entropy_min: 0.8
-    gate_entropy_max: 3.5
-  rung1_tokens: 180000
-  rung2_tokens: 600000
+    gate_entropy_min: 0.0  # allow non-MoE/router-free candidates to proceed
+    gate_entropy_max: 4.0
+  rung1_tokens: 240000
+  rung2_tokens: 720000
   population: 24
-  topk_keep: 0.5
+  topk_keep: 0.35  # preserve diversity; avoid collapsing to a few shallow winners
   crossover_prob: 0.5
   parent_selection: lexicase
   pareto_objectives:
@@ -466,6 +466,14 @@ evolution:
     numerator: ppl_code
     denominator: long_recall
     epsilon: 0.1
+  promotion_prob: 0.4
+  promotion_min_layers: 6
+  promotion_min_moe_blocks: 2
+  promotion_steps_multiplier: 1.5
+  promotion_tokens_multiplier: 1.5
+  promotion_min_router_entropy: 0.0
+  promotion_min_recurrence_gain: 0.0
+  promotion_max_instability: null
 priors:
   tokens_per_param: 4.0
   window_scale: 6.0
