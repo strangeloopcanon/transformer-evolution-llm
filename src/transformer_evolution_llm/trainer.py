@@ -66,8 +66,20 @@ class FullWeightTrainer:
             parent_state = torch.load(
                 seed_state_path, map_location=self.device
             )  # nosec B614 - checkpoints produced locally
-            model.load_state_dict(parent_state, strict=False)
-            match_experts_to_parent(model, parent_state)
+            try:
+                model.load_state_dict(parent_state, strict=False)
+                match_experts_to_parent(model, parent_state)
+            except RuntimeError:
+                # If shapes changed (e.g., GQA/Sparsity mutations), load only compatible tensors.
+                current_state = model.state_dict()
+                compatible_state = {
+                    k: v
+                    for k, v in parent_state.items()
+                    if k in current_state and current_state[k].shape == v.shape
+                }
+                if compatible_state:
+                    model.load_state_dict(compatible_state, strict=False)
+                # fall back to random init for the rest
         optimizer = build_optimizer(model.parameters(), spec.train)
         criterion = nn.CrossEntropyLoss()
         start_time = time.perf_counter()
