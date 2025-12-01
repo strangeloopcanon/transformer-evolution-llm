@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import random
 import uuid
+from collections import Counter
 from pathlib import Path
 
 import ujson as json
@@ -35,6 +36,7 @@ def default_objectives() -> ObjectiveDir:
         "moe_blocks": "max",
         "novelty": "max",
         "instability": "min",
+        "graph_entropy": "max",
     }
 
 
@@ -132,6 +134,7 @@ class EvolutionRunner:
     def _evaluate_candidate(self, candidate: Candidate) -> None:
         candidate.metrics["layers"] = float(candidate.spec.model.n_layers)
         candidate.metrics["moe_blocks"] = float(candidate.spec.model.moe_block_count())
+        candidate.metrics["graph_entropy"] = self._graph_entropy(candidate.spec)
         # novelty vs parent or base
         ref = None
         if candidate.parent:
@@ -357,6 +360,35 @@ class EvolutionRunner:
                 count += 1.0
                 dist += abs(float(block.ffn.hidden) - target_ffn) / target_ffn
         return float(dist / count)
+
+    @staticmethod
+    def _graph_entropy(spec: ArchitectureSpec) -> float:
+        import math
+
+        tokens: list[str] = []
+        for block in spec.model.blocks:
+            if block.attn:
+                tokens.append(f"attn:{block.attn.kind}")
+                tokens.append(f"sparsity:{block.attn.sparsity or 'none'}")
+                if block.attn.gating_pos and block.attn.gating_pos != "none":
+                    tokens.append(f"gate:{block.attn.gating_pos}-{block.attn.gating_op or 'dense'}")
+            if block.ffn:
+                tokens.append(f"ffn:{getattr(block.ffn, 'type', 'dense')}")
+            if block.ssm:
+                tokens.append(f"ssm:{block.ssm.kind}")
+            for extra in block.extras:
+                tokens.append(f"extra:{getattr(extra, 'type', type(extra).__name__)}")
+        for rec in spec.model.recurrences:
+            tokens.append(f"rec:{rec.start}-{rec.end}")
+        if not tokens:
+            return 0.0
+        counts = Counter(tokens)
+        total = sum(counts.values())
+        probs = [c / total for c in counts.values() if c > 0]
+        entropy = -sum(p * math.log(p) for p in probs)
+        diversity = len(counts)
+        depth_bonus = math.log1p(spec.model.n_layers)
+        return float(entropy + 0.05 * diversity + 0.1 * depth_bonus)
 
     def _apply_composite_metrics(self, candidate: Candidate) -> None:
         if not self._composite_metrics:

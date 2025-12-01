@@ -188,7 +188,12 @@ def add_recurrence(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSp
     if len(child.model.blocks) < 3:
         return child
     start = rng.randrange(0, len(child.model.blocks) - 1)
-    end = min(len(child.model.blocks), start + rng.choice([2, 3, 4]))
+    # Allow wider spans so recurrence can stitch distant stages together.
+    max_span = max(2, min(len(child.model.blocks), rng.choice([4, 6, 8, len(child.model.blocks)])))
+    span = rng.randint(2, max_span)
+    end = min(len(child.model.blocks), start + span)
+    if end <= start:
+        end = min(len(child.model.blocks), start + 1)
     rec = RecurrenceConfig(
         start=start,
         end=end,
@@ -321,6 +326,35 @@ def add_extra_combo(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureS
     return child
 
 
+def graph_jitter(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
+    """Apply a handful of neutral edits to increase structural entropy."""
+    child = clone_spec(spec)
+    jitter_ops = [
+        "duplicate_block_span",
+        "shuffle_block_span",
+        "add_recurrence",
+        "add_additional_recurrence",
+        "toggle_ssm",
+        "insert_retro_module",
+        "insert_custom_module",
+        "toggle_gated_mix",
+        "tune_attn_gating",
+        "tune_kv",
+        "tune_rope",
+        "dense_to_moe",
+        "mutate_topk",
+        "shift_moe",
+        "make_gqa",
+    ]
+    steps = rng.randint(2, 4)
+    current = child
+    for name in rng.sample(jitter_ops, k=min(steps, len(jitter_ops))):
+        fn = REGISTRY.get(name)
+        if fn:
+            current = fn(current, rng)
+    return current
+
+
 REGISTRY: dict[str, MutationFn] = {
     "duplicate_block_span": duplicate_block_span,
     "shuffle_block_span": shuffle_block_span,
@@ -340,6 +374,7 @@ REGISTRY: dict[str, MutationFn] = {
     "tune_rope": tune_rope,
     "add_recurrence": add_recurrence,
     "tune_recurrence": tune_recurrence,
+    "graph_jitter": graph_jitter,
     "template_mutation": lambda spec, rng: apply_template_mutation(spec, rng),
 }
 
