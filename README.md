@@ -12,195 +12,42 @@ We’re building an autonomous evolution loop that invents new LLM blueprints we
 
 Recent phi-creative sweeps (Pareto-uniform + lexicase) spawned 54 frontier survivors across ~48 generations (`runs/frontier_phi_creative_unbiased.json`, `runs/frontier_phi_creative_overnight_lexi.json`). The runs share the same DSL, mutation deck, and checkpoint-aware crossover; only the selection strategy changes. Diversity is enforced by the selector, not by ad-hoc weighting.
 
-- **Canonical creative sweep (Nov 15)** reseeded from the best hybrid (`configs/seed_xover-48-9237.yaml`), enabled a composite objective `ppl_per_long_recall = ppl_code / max(long_recall, 0.1)`, and relaxed trainer guards so throughput is recorded. Artefacts live at `runs/frontier_phi_creative_canon.json`. The best balanced model (`mutate_topk-24-6bee`) is a 14-block MoE+retro+recurrence stack (`ppl≈2.3e4`, `long_recall≈0.57`, `throughput=0`). The same run also exposed a corner case: recurrence-heavy 1-layer toys produced `long_recall>1` and collapsed the ratio, so the next sweep will clamp that proxy before trade-off analysis.
-- `xover-36-37b0` hit `ppl_code ≈1.05` while keeping throughput above `1.36 k tok/s` by fusing local_global attention, a MoE(16×2) block, retro gates, and a single mamba2 SSM slice.
-- `xover-39-204f` stretched long-recall to `≈0.75` with three retro adapters and sparsity; it happily paid throughput (~930 tok/s) to win on horizon length.
-- `toggle_ssm-30-d493` delivered `≈1.53 k tok/s` by letting the DSL flip SSM blocks on/off without rewriting code, quantifying the latency cost of “smart” memory.
-- Pareto-uniform kept both throughput-first and quality-first niches alive. We did not have to guess weights ahead of time; the frontier surfaced the trade-offs for us.
+## How it works (tight loop)
+- Typed DSL (YAML → Pydantic) defines blocks (attention/MoE/SSM/retro/gates) and training schedule; static checks reject oversized or invalid specs.
+- Mutations + template mutations generate candidates; checkpoint-aware crossover splices parent weights so children start warm.
+- Live trainer runs short finetunes (rung budgets) with MoE telemetry and safety guards; promotion can grant extra budget to complex candidates.
+- Selection uses Pareto/lexicase on PPL, throughput, long-recall proxies, novelty, and graph entropy to keep both simple and complex niches alive.
+- Frontier + lineage are JSON; checkpoints are stored per candidate for export or reseeding.
 
-### Standout Pareto points
+## Current status (baseline, seed=84, graph-entropy push)
 
-| Role | Model | Key ingredients | Metrics |
-| --- | --- | --- | --- |
-| Depth scout | `xover-36-37b0` | local_global heads + MoE(16×2) + retro gate + mamba2 SSM | `ppl_code ≈1.05`, `throughput ≈1.36 k tok/s`, `long_recall ≈0.33` |
-| Horizon hoarder | `xover-39-204f` | triple retro adapters + sparse attention, MoE kept tiny | `long_recall ≈0.75`, `throughput ≈930 tok/s`, `ppl_code ≈1.38` |
-| Throughput anchor | `toggle_ssm-30-d493` | SSM toggle + kv_groups compression + retro pair | `throughput ≈1.53 k tok/s`, `ppl_code ≈1.48`, `long_recall ≈0.67` |
+Command (mps):  
+`AGENT_MODE=baseline .venv/bin/python scripts/run_live.py configs/seed_xover-48-9237.yaml --generations 160 --steps 256 --eval-batches 4 --device mps --checkpoint-dir runs/checkpoints_phi_entropy_v2 --out runs/frontier_phi_entropy_v2.json --seed 84 --cleanup-old-checkpoints`
 
-## Signals we keep seeing
+Core takeaway: raising rung budgets, adding `graph_entropy` to selection, and tightening promotion (≥8 layers, ≥2 MoE) brought back deep MoE/SSM/retro “hydras” without sacrificing PPL (~1.0–1.05). The frontier is now broad (99 survivors): shallow retro stacks for speed, and deep hybrids for structure.
+
+Notable seeds to scale next:
+- `xover-15-3ab4` — 17 layers, 7 MoE, 5 SSM, retro=10; `ppl≈1.00`, `throughput≈271 tok/s`, `graph_entropy≈2.71`.
+- `xover-72-d77d` — 19 layers, 8 MoE, 4 SSM, retro=11; `ppl≈1.01`, `throughput≈235 tok/s`, `graph_entropy≈2.70`.
+- `xover-106-72d2` — 14 layers, 8 MoE, 4 SSM, retro=7; `ppl≈1.05`, `throughput≈212 tok/s`, `graph_entropy≈2.83`.
+- `add_extra_combo-53-b0c4` — 15 layers, 6 MoE, 3 SSM, retro=9; `ppl≈1.00`, `throughput≈307 tok/s`, `graph_entropy≈2.70`.
+- Lighter deep option: `tune_rope-2-9a3e` — 12 layers, 5 MoE, 3 SSM, retro=7; `ppl≈1.00`, `throughput≈377 tok/s`.
+- Maximal structure probe: `xover-119-1d12` — 30 layers, 14 MoE, 8 SSM, retro=17; `ppl≈1.05`, `throughput≈5 tok/s`, `graph_entropy≈2.84` (use as an architecture study, not a throughput seed).
+
+Checkpoints live in `runs/checkpoints_phi_entropy_v2` (~6.3 GB). Frontier/lineage: `runs/frontier_phi_entropy_v2.json`, `runs/frontier_phi_entropy_v2_lineage.json`.
+
+## Signals we keep seeing (from current + prior runs)
 
 - Memory + sparsity synergize: local_global attention with short-horizon retro keeps KV modest while improving perplexity and long-recall.
-- Hybrids beat single tricks: MoE + SSM shows up in every top-quality model; toggling SSM quantifies the throughput tax.
-- Diversity without weights: Pareto-uniform preserved both high-throughput and high-quality niches without us hand-weighting layers/MoE.
-- DSL velocity: adding sparsity + router knobs to the schema instantly expanded the search space; template mutations spread those knobs consistently across layers.
+- Hybrids beat single tricks: MoE + SSM + retro consistently top quality when budgets allow; toggling SSM quantifies the throughput tax.
+- Budget gating matters: with promotion + higher rung budgets, deep hydras (MoE/SSM/retro) become competitive; without it, shallow retro stacks dominate.
 
-## What the newer runs taught us
+## Practical next steps
 
-As we pushed the loop harder on this machine the story evolved in three phases:
-
-1. **Seeded sweeps from `xover-36-37b0` (CPU + MPS)**  
-   - Starting from the canonical hybrid (`configs/seed_xover_36_37b0.yaml`), short seeded runs on CPU and MPS confirmed the original phi‑creative picture:
-     - Shallow hybrids (1–3 layers) with **local_global + retro + a single MoE + a light mamba2 slice** dominate under tiny budgets (a few hundred steps, ≈4 tokens/param).  
-     - Ablations (`scripts/run_ablation.py`) showed:
-       - `retro_off` collapses `long_recall` to ~0 and often improves PPL → retro is a clean horizon knob.  
-       - `kv_groups_to_dense` generally hurts PPL at fixed recall once we add MoE and sparsity.  
-       - Under these budgets, MoE blocks are over‑capacity: `moe_to_dense` improves PPL in the top models while leaving `long_recall` unchanged.
-
-2. **High‑budget recurrence sweeps (`live_phi_creative_recur_super.yaml`)**  
-   - We then dialed budgets up via `configs/live_phi_creative_recur_super.yaml`:
-     - `max_tokens ≈ 1.8M`, `tokens_per_param ≈ 12`, `rung1_tokens = 6e5`, `rung2_tokens = 1.8e6`, population 32.  
-     - Blocks mix GQA, local_global / local_block / dilated sparsity, MoE, mamba2, and multiple retro extras, wrapped in a recurrence over blocks 1–4.
-   - The resulting frontier (`runs/frontier_phi_creative_super_recur_mps.json`) surfaced two regimes:
-     - **Shallow high‑recall motifs** (1–2 layers, often 1 MoE + retro + SSM) that still win PPL under aggressive early‑stop.  
-     - **Deep “hydras”**: 7–15 layer stacks with 2–4 MoE blocks, multiple mamba2 branches, and long recurrences.  
-   - Ablations flipped the earlier MoE story:
-     - For the top PPL candidates in this run, `moe_to_dense` now **worsens** PPL, while `retro_off` still trades horizon for quality.  
-     - Under higher tokens/param, MoE + kv compression finally pay off; retro remains the horizon dial.
-
-3. **Promotion: giving deep hybrids a fair fight**  
-   - To let deep/MoE‑heavy models compete inside a single evolutionary run, we added a **promotion rung** in `EvolutionRunner`:
-     - Promotion is configured in `EvolutionConfig` via:
-       - `promotion_prob` – probability to promote eligible candidates.  
-       - `promotion_min_layers`, `promotion_min_moe_blocks` – structural thresholds.  
-       - `promotion_steps_multiplier`, `promotion_tokens_multiplier` – how much extra budget to give.  
-     - In live mode, candidates that meet the thresholds (e.g., ≥6 layers and ≥2 MoE blocks) sometimes get a third training rung with more steps/tokens, and their promoted metrics are what the frontier sees.
-   - With these knobs set in `live_phi_creative_recur_super.yaml` and run via `run_phi_promotion_mps.sh`, the **promotion sweep** (`runs/frontier_phi_promotion_mps.json`) looks very different:
-     - Best PPL drops further (`ppl_code ≈1.18e4`), and the **top‑10 models are no longer dominated by shallow stacks**:
-       - Top‑10 average: ~10.5 layers and ~3.6 MoE blocks.  
-       - Rest of the frontier: ~5.1 layers and ~1.6 MoE blocks.
-     - Deep, heavily MoE‑hybrid “hydras” (up to 19 layers and 7 MoE blocks in this run) now sit near the top of the frontier instead of languishing as undertrained curiosities.
-
-### A loose “heterogeneity scaling law”
-
-Across these runs we see a consistent pattern:
-
-- At **low budgets** (few hundred steps, ≈4 tokens/param), increasing architectural heterogeneity
-  (more layers, more MoE blocks, more recurrences) reliably hurts PPL—simple hybrids win.
-- At **higher budgets** (≈12 tokens/param) without promotion, heterogeneity begins to show up on the frontier but still trails the shallow winners.
-- Once we add **structured promotions** (extra steps/tokens for deep + MoE‑rich candidates), the relationship changes:
-  - The best PPL candidates move into a higher‑heterogeneity regime (more layers + more MoE) while shallow hybrids remain competitive but no longer uniquely best.
-
-Informally: there is a **budget threshold** beyond which “weirder” hybrids (deeper stacks, more MoE/SSM/retro) stop being dead weight and start paying for themselves. The DSL and orchestration are now set up so you can explore that frontier explicitly by:
-
-- Raising `tokens_per_param` and `max_tokens` in configs like `live_phi_creative_recur_super.yaml`.  
-- Turning promotion on/off or adjusting its thresholds in `evolution` to bias where extra budget goes.  
-- Inspecting `runs/frontier_*.json` and the matching subway diagrams to see how the frontier shifts as complexity and budget rise together.
-
-## Evolution at a glance
-
-Lineages are exported as JSON and rendered as Mermaid so you can see ideas branch, merge, and sometimes disappear. Below are two complementary views derived from the recent phi-creative runs.
-
-### River of ideas (seed → champion)
-
-```mermaid
-graph LR
-  vaswani["Transformer\n(Vaswani 2017)"]
-  seed["seed-1-c4bd\nretro + yarn-GQA"]
-  mutate["mutate_topk-2-f85f\nrouter temperature sweep"]
-  combo["xover-28-13fb\nMoE routers stabilize"]
-  hybrid["xover-36-a6c5\nSSM + MoE hybrids"]
-  gate["toggle_ssm-48-b3c7\non/off memory gate"]
-  winner["xover-36-37b0\nbest ppl"]
-  vaswani --> seed --> mutate --> combo --> hybrid --> gate --> winner
-```
-
-### Architectural subway (condensed view)
-
-```mermaid
-graph LR
-  subgraph Gen0
-    seed_c593["seed-1-c593"]
-  end
-  subgraph Gen1
-    mutate144b["mutate_topk-2-144b"]
-  end
-  subgraph Gen2
-    xover3["xover-3-ff3d"]
-  end
-  subgraph Gen3
-    xover4["xover-4-566d"]
-    toggleSSM["toggle_ssm-8-e743"]
-  end
-  subgraph Gen4
-    template9["template_mutation-9-8563"]
-    tuneRope12["tune_rope-12-51be"]
-  end
-  subgraph Gen5
-    xover13["xover-13-f54e"]
-    togglePrecision18["toggle_precision-18-e729"]
-    template19["template_mutation-19-14bc"]
-  end
-  subgraph Gen6
-    retro15["insert_retro_module-15-7418"]
-    xover24["xover-24-819c"]
-    xover27["xover-27-9d76"]
-  end
-  subgraph Gen7
-    xover28["xover-28-4b7b"]
-  end
-  subgraph Gen8
-    tuneRec30["tune_recurrence-30-56f8"]
-  end
-  seed_c593 --> mutate144b --> xover3 --> xover4
-  xover3 --> toggleSSM
-  xover4 --> template9 --> tuneRope12
-  template9 --> togglePrecision18 --> xover24
-  template9 --> template19 --> xover24
-  tuneRope12 --> xover27 --> xover28 --> tuneRec30
-  retro15 --> xover28
-  xover13 --> xover28
-```
-
-Render the full subway diagram anytime:
-
-```bash
-python scripts/render_lineage_subway.py runs/frontier_phi_creative_overnight_lexi_lineage.json \
-  --out runs/creative_overnight_lexi_subway.mmd
-```
-
-<details>
-<summary>Field notes from recent sweeps</summary>
-
-- Selectors: Pareto-uniform (no scalarized weights) on the frontier run, lexicase overnight. Optimizer stayed fixed at AdamW so architectural edits stayed comparable.
-- Mutation deck: local_global sparsity knobs, router tuning, MoE/SSM toggles, recurrence/retro insertion, rope jitter, and template mutations that touch whole layer stacks.
-- Artefacts: metrics in `runs/frontier_phi_creative_unbiased.json`; lineage nodes in `runs/frontier_phi_creative_unbiased_lineage_from_log.json`.
-
-#### Cross-section of the best-ppl architecture (`xover-36-37b0`)
-
-```mermaid
-graph TD
-  B1["GQA 8×64 + yarn + local_global kv=2 + Dense + Retro(256)"]
-  B2["GQA 8×64 + MoE(16×2) + exp-gater + exp-3878"]
-  B3["GQA 8×64 + Dense + SSM(mamba2)"]
-  B1 --> B2 --> B3 --> Head["LM Head"]
-```
-
-#### Deep dive: constraints, DSL impact, and architectural sinks
-
-**Why constraints shaped outcomes**
-- Single-machine budgets force KV and throughput awareness; deep SSM stacks are penalized on MPS, so hybrids that place SSM sparingly do better.
-- StaticChecker size/KV/throughput gates filter out untrainable configs quickly, keeping exploration focused.
-- Pareto-uniform selection (vs weighted) avoids steering toward layers/MoE and surfaces diverse trade-offs naturally.
-
-**How the DSL helped**
-- New knobs (sparsity: local_global, qk_norm_max; router temperature/aux) became searchable as soon as they were added to the schema—no extra Python mutations needed.
-- Template mutations emit edits across blocks consistently; StaticChecker keeps dimensions valid.
-- Composite metrics can be declared directly in YAML (`evolution.composite_metrics`). The runner now derives them automatically, letting us bias lexicase toward “quality-per-long-recall” instead of rewarding pathological single-block runs.
-
-**Architectural “sinks” rediscovered across runs**
-- Single-block, multi-horizon memory (triple retro) for speed.
-- Sparse attention + retro (local_global + retro) for longer horizons at modest KV.
-- MoE + SSM hybrids for quality when budgets allow (exposed via toggle_ssm trade-offs).
-
-</details>
-
-## Lineage & artefacts
-
-- Frontier metrics: `runs/frontier_phi_creative_unbiased.json` (Pareto) and `runs/frontier_phi_creative_overnight_lexi.json` (lexicase).
-- Lineage graphs: `runs/frontier_phi_creative_unbiased_lineage_from_log.json`, `runs/creative_overnight_lexi_lineage.mmd`, and `runs/phi_recur_subway.mmd`.
-- Scale-hop seeds: `configs/scalehop_xover-68-8a93.yaml` widens the best-ppl winner to ~400 M params; see `docs/gpu_run_plan.md`.
-
-<details>
-<summary>Run it yourself (setup, smoke tests, sweeps)</summary>
+- Reproduce the latest sweep (above) or export a seed for scaling: `scripts/export_seed.py <frontier_path> --id <candidate_id> --out seeds/<name>.pt`.
+- Inspect frontier/lineage: `runs/frontier_phi_entropy_v2.json`, `runs/frontier_phi_entropy_v2_lineage.json`.
+- For a longer SOTA-oriented sweep on a bigger box: reuse `configs/seed_xover-48-9237.yaml` but raise `--generations` (e.g., 200–240), `--steps` (320–384), and consider bumping `rung1_tokens/rung2_tokens` in the config (e.g., 0.6M / 1.8–3.6M) with `promotion_min_layers>=8`, `promotion_min_moe_blocks>=2`; set `--device cuda` if available.
+- For historical sweep details, see `RUNS_HISTORY.md` (succinct) or the archived artefact paths noted there.
 
 ```bash
 # Setup

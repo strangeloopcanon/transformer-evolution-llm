@@ -315,7 +315,20 @@ def _average_router_entropy(model: nn.Module) -> float | None:
 
 
 def _estimate_long_recall(spec: ArchitectureSpec) -> float:
-    retro = 0
-    for block in spec.model.blocks:
-        retro += sum(1 for extra in block.extras if getattr(extra, "type", None) == "retro")
-    return retro / max(1, spec.model.n_layers)
+    layers = max(1, spec.model.n_layers)
+    retro_blocks = sum(
+        1
+        for block in spec.model.blocks
+        for extra in block.extras
+        if getattr(extra, "type", None) == "retro"
+    )
+    ssm_blocks = sum(1 for block in spec.model.blocks if block.ssm is not None)
+    rec_spans = len(spec.model.recurrences)
+    extra_types = {
+        getattr(extra, "type", type(extra).__name__)
+        for block in spec.model.blocks
+        for extra in block.extras
+    }
+    density = (retro_blocks + 0.5 * ssm_blocks + 0.5 * rec_spans) / layers
+    diversity_bonus = 0.1 * len(extra_types)
+    return float(min(2.0, density + diversity_bonus))

@@ -366,18 +366,16 @@ def _generate_random_template(spec: ArchitectureSpec, rng: random.Random) -> Mut
                 "tune_attn": {
                     "selector": rng.choice(["random", "random_ssm", "random_dense", "random_moe"]),
                     "qk_norm_max": rng.choice([None, rng.uniform(5.0, 12.0)]),
-                    "gating_pos": (
-                        rng.choice(["none", "output", "value"]) if rng.random() < 0.3 else None
-                    ),
-                    "gating_op": rng.choice(["dense", "diagonal"]) if rng.random() < 0.3 else None,
-                    "sw_jitter": rng.choice([-64, -32, 0, 32, 64]),
+                    "gating_pos": rng.choice(["none", "output", "value"]),
+                    "gating_op": rng.choice(["dense", "diagonal"]),
+                    "sw_jitter": rng.choice([-256, -128, -64, -32, 0, 32, 64, 128, 256]),
                     "sparsity": rng.choice(
                         ["none", "sliding", "block", "local_global", "dilated", "local_block"]
                     ),
-                    "block_size": rng.choice([None, 32, 64, 128]),
-                    "block_stride": rng.choice([None, 32, 64, 128]),
-                    "global_stride": rng.choice([None, 16, 32, 64, 128]),
-                    "dilation": rng.choice([None, 2, 4, 8]),
+                    "block_size": rng.choice([None, 32, 64, 128, 256]),
+                    "block_stride": rng.choice([None, 16, 32, 64, 128, 256]),
+                    "global_stride": rng.choice([None, 16, 32, 64, 128, 256]),
+                    "dilation": rng.choice([None, 2, 4, 8, 16]),
                 }
             }
         elif action_type == "tune_router":
