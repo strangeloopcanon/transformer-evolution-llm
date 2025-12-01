@@ -41,6 +41,14 @@ Checkpoints live in `runs/checkpoints_phi_entropy_v2` (~6.3 GB). Frontier/line
 - Memory + sparsity synergize: local_global attention with short-horizon retro keeps KV modest while improving perplexity and long-recall.
 - Hybrids beat single tricks: MoE + SSM + retro consistently top quality when budgets allow; toggling SSM quantifies the throughput tax.
 - Budget gating matters: with promotion + higher rung budgets, deep hydras (MoE/SSM/retro) become competitive; without it, shallow retro stacks dominate.
+- Training takeaways: retro is the reliable horizon lever; MoE and SSM only pay off when budgets rise and promotion is on. Diversity pressure (graph entropy, novelty, layers/MoE objectives) prevents collapse into shallow retro spam.
+
+## How these differ from typical 2025 SOTA stacks
+
+- Multi-branch memory: most candidates embed retro modules in many blocks (5–12 inserts) plus occasional recurrences, unlike vanilla decoder-only stacks with one attention path.
+- Mixed kernels per depth: MoE and SSM are interleaved (or staged) across depth, not “all-dense” or “MoE-only” bands.
+- Structured sparsity + gating: gated attention variants, sparsity (local_global/dilated), and per-block gated extras appear throughout; standard stacks rarely explore this combination automatically.
+- High structural entropy: block order and extras are reshuffled by crossover/mutation, yielding distinct lineages rather than a single scaffold with tuned hyperparameters.
 
 ## Practical next steps
 
