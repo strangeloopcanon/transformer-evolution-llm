@@ -56,6 +56,8 @@ def _detect_attention_impl(device: str) -> str:
 @app.command()
 def main(
     config: Path = typer.Argument(..., exists=True, readable=True, help="YAML/JSON DSL config"),
+    resume_from: Path | None = typer.Option(None, help="Path to saved runner state JSON to resume from."),
+    state_out: Path | None = typer.Option(None, help="Optional path to write runner state after completion."),
     generations: int = typer.Option(18, min=1),
     steps: int = typer.Option(120, min=1, help="Gradient steps per candidate."),
     eval_batches: int = typer.Option(4, min=1),
@@ -79,6 +81,15 @@ def main(
     score_weight_moe: float = typer.Option(1.0, help="Weight for MoE block count in parent selection."),
     score_weight_novelty: float = typer.Option(1.0, help="Weight for novelty in parent selection."),
     score_weight_instability: float = typer.Option(1.0, help="Weight for instability (minimize) in parent selection."),
+    mutation_weight: list[str] = typer.Option(
+        None,
+        help="Optional mutation weights as name=weight (repeatable). Example: --mutation-weight dense_to_moe=3.0",
+    ),
+    mutation_steps: int = typer.Option(
+        1,
+        min=1,
+        help="Number of mutations to apply per child (chained sequentially).",
+    ),
     parent_selection: str = typer.Option(
         "weighted",
         help="Parent selection strategy: weighted | pareto_uniform | lexicase",
@@ -88,7 +99,18 @@ def main(
     ),
 ) -> None:
     """Run an evolutionary sweep with the live trainer."""
-    spec = load_spec(config)
+    if resume_from:
+        runner = EvolutionRunner.load_state(resume_from, mode="live")
+        spec = runner.base_spec
+    else:
+        spec = load_spec(config)
+        runner = EvolutionRunner(
+            spec,
+            spec.evolution,
+            mode="live",
+            seed=seed,
+            score_weight_overrides=None,
+        )
     score_weights = {
         "ppl_code": score_weight_ppl,
         "ppl_math": score_weight_ppl,
@@ -102,13 +124,21 @@ def main(
     }
     if score_weight_prior != 0.0:
         score_weights["prior_distance"] = score_weight_prior
-    runner = EvolutionRunner(
-        spec,
-        spec.evolution,
-        mode="live",
-        seed=seed,
-        score_weight_overrides=score_weights,
-    )
+    runner.score_weights = score_weights
+    # Optional mutation mix override: list of "name=weight"
+    if mutation_weight:
+        weights: dict[str, float] = {}
+        for item in mutation_weight:
+            if "=" not in item:
+                continue
+            name, val = item.split("=", 1)
+            try:
+                weights[name] = float(val)
+            except ValueError:
+                continue
+        if weights:
+            runner.mutation_weights = weights
+    runner.mutation_steps = mutation_steps
     # Override selection strategy from CLI if provided
     try:
         runner.cfg.parent_selection = parent_selection  # type: ignore[attr-defined]
@@ -141,6 +171,12 @@ def main(
     runner.checkpoint_dir = checkpoint_dir
     runner.run(generations=generations)
     runner.save_frontier(out)
+    if state_out is None:
+        state_out = out.with_name(out.stem + ".state.json")
+    try:
+        runner.save_state(state_out)
+    except Exception:
+        pass
     if lineage_out is None:
         # default next to frontier
         lineage_out = out.with_name(out.stem + "_lineage.json")

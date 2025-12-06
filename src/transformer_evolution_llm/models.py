@@ -95,6 +95,13 @@ class MultiHeadSelfAttention(nn.Module):
 
         self.gating_pos = getattr(cfg, "gating_pos", "none")
         self.gating_op = getattr(cfg, "gating_op", "dense")
+        # Selector-based sparsity (stubbed to dense fallback by default)
+        self.selector_mode = getattr(cfg, "selector", "none") or "none"
+        self.selector_topk = getattr(cfg, "selector_topk", None)
+        self.selector_heads = getattr(cfg, "selector_heads", None)
+        self.selector_dim = getattr(cfg, "selector_dim", None)
+        self.selector_rope = getattr(cfg, "selector_rope", "none") or "none"
+        self.selector_detach = bool(getattr(cfg, "selector_detach", False))
 
         if self.gating_pos != "none":
             # Head-specific gating: G_h = Sigmoid(Op(Q_h))
@@ -153,6 +160,16 @@ class MultiHeadSelfAttention(nn.Module):
             if attn_mask is None:
                 attn_mask = torch.full((t, t), float("-inf"), device=x.device)
             return attn_mask
+
+        # Optional selector stub: approximate token pruning via a local window when enabled.
+        if self.selector_mode != "none":
+            mask = ensure_mask()
+            window = int(self.selector_topk or 0) or t
+            window = min(window, t)
+            for i in range(t):
+                lo = max(0, i - window // 2)
+                hi = min(t, i + window // 2 + 1)
+                mask[i, lo:hi] = 0.0
 
         if sparsity == "local_block":
             mask = ensure_mask()
@@ -277,8 +294,16 @@ class MoELayer(nn.Module):
     def __init__(self, dim: int, cfg: MoEFFNConfig):
         super().__init__()
         self.cfg = cfg
+        self.router_type = getattr(cfg, "router_type", "softmax")
+        self.router_bias_detached = bool(getattr(cfg, "router_bias_detached", False))
+        self.shared_expert_count = max(
+            int(getattr(cfg, "shared", 0) or 0), 1 if getattr(cfg, "shared_expert", False) else 0
+        )
         self.router = nn.Linear(dim, cfg.n_experts)
         self.experts = nn.ModuleList()
+        self.shared_expert = (
+            Expert(dim, cfg.hidden, activation="swiglu") if self.shared_expert_count > 0 else None
+        )
         if cfg.experts:
             for idx in range(cfg.n_experts):
                 # If fewer expert configs than n_experts, repeat the last one.
@@ -321,9 +346,15 @@ class MoELayer(nn.Module):
 
     def forward(self, x: Tensor) -> Tensor:
         temp = float(self.cfg.router_temperature) if self.cfg.router_temperature else 1.0
-        logits = self.router(x) / temp
+        bias = self.router.bias.detach() if self.router_bias_detached else self.router.bias
+        logits = F.linear(x, self.router.weight, bias) / temp
         topk_val, topk_idx = torch.topk(logits, k=self.cfg.k, dim=-1)
-        weights = torch.softmax(topk_val, dim=-1)
+        if self.router_type == "sigmoid":
+            weights = torch.sigmoid(topk_val)
+            denom = weights.sum(dim=-1, keepdim=True).clamp_min(1e-6)
+            weights = weights / denom
+        else:
+            weights = torch.softmax(topk_val, dim=-1)
         outputs = torch.zeros_like(x)
         # Track simple routing stats for aux losses/metrics
         # Entropy over top-k weights (normalized to [0,1] by log(k))
@@ -354,6 +385,9 @@ class MoELayer(nn.Module):
                     expert_out = self.experts[expert_id](x[mask])
                     expert_outputs = expert_outputs.index_put((mask,), expert_out)
             outputs = outputs + expert_outputs * weight
+        if self.shared_expert is not None:
+            shared_out = self.shared_expert(x)
+            outputs = outputs + shared_out
         return outputs
 
     def sort_experts(self) -> None:

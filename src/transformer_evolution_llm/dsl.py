@@ -50,6 +50,13 @@ class AttentionConfig(BaseModel):
     # For local_global pattern: reuse sw as local window; add explicit global stride
     global_stride: int | None = Field(default=None, gt=0)
     dilation: int | None = Field(default=None, gt=0)
+    # Selector-based sparsity (e.g., DeepSeek-style)
+    selector: Literal["none", "dsa"] = "none"
+    selector_topk: int | None = Field(default=None, gt=0)
+    selector_heads: int | None = Field(default=None, gt=0)
+    selector_dim: int | None = Field(default=None, gt=0)
+    selector_rope: Literal["none", "partial", "full"] = "none"
+    selector_detach: bool = False
 
     model_config = {"populate_by_name": True, "extra": "ignore"}
 
@@ -88,6 +95,12 @@ class MoEFFNConfig(BaseModel):
     balance: float = Field(default=0.05, ge=0.0)
     shared: int = Field(default=0, ge=0)
     router_temperature: float | None = Field(default=None, gt=0.0)
+    router_type: Literal["softmax", "sigmoid"] = "softmax"
+    router_bias_detached: bool = False
+    shared_expert: bool = False
+    router_aux_weight: float | None = Field(default=None, ge=0.0)
+    router_lb_weight: float | None = Field(default=None, ge=0.0)
+    drop_policy: Literal["none", "greedy"] = "none"
     experts: list[MoEExpertConfig] = Field(default_factory=list)
 
 
