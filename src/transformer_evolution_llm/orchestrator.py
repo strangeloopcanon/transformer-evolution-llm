@@ -154,6 +154,8 @@ class EvolutionRunner:
         selector_blocks: float = 0.0
         selector_topk_sum: float = 0.0
         selector_count: float = 0.0
+        # Memory proxies: count blocks with retro extras and number of recurrences
+        memory_blocks: float = 0.0
         for block in candidate.spec.model.blocks:
             attn = block.attn
             if attn and getattr(attn, "selector", "none") != "none":
@@ -162,10 +164,18 @@ class EvolutionRunner:
                 if topk_val is not None:
                     selector_topk_sum += float(topk_val)
                     selector_count += 1.0
+            # Count memory-bearing blocks via retro extras
+            for extra in block.extras:
+                extra_type = getattr(extra, "type", type(extra).__name__).lower()
+                if "retro" in extra_type:
+                    memory_blocks += 1.0
+                    break
         candidate.metrics["selector_blocks"] = selector_blocks
         candidate.metrics["selector_topk_avg"] = (
             selector_topk_sum / selector_count if selector_count > 0 else 0.0
         )
+        candidate.metrics["memory_blocks"] = memory_blocks
+        candidate.metrics["recurrences"] = float(len(candidate.spec.model.recurrences))
         # novelty vs parent or base
         ref = None
         if candidate.parent:
@@ -179,10 +189,14 @@ class EvolutionRunner:
         min_layers = float(thresholds.get("min_layers", 0.0) or 0.0)
         min_moe = float(thresholds.get("min_moe_blocks", 0.0) or 0.0)
         min_selector = float(thresholds.get("min_selector_blocks", 0.0) or 0.0)
+        min_memory = float(thresholds.get("min_memory_blocks", 0.0) or 0.0)
+        min_recurrences = float(thresholds.get("min_recurrences", 0.0) or 0.0)
         if (
             candidate.metrics["layers"] < min_layers
             or candidate.metrics["moe_blocks"] < min_moe
             or candidate.metrics["selector_blocks"] < min_selector
+            or candidate.metrics["memory_blocks"] < min_memory
+            or candidate.metrics["recurrences"] < min_recurrences
         ):
             candidate.status = "failed"
             return
