@@ -11,8 +11,9 @@ from rich.console import Console
 from rich.table import Table
 
 from . import get_version
-from .api import export_frontier_seed, run_evolution
+from .api import export_frontier_seed, prune_checkpoints, run_evolution
 from .cache_builder import synthesize_cache
+from .orchestrator import EvolutionRunner
 
 app = typer.Typer(help="Evolutionary search loop utilities")
 console = Console()
@@ -90,6 +91,54 @@ def export_seed(
         checkpoint_dir=checkpoint_dir,
     )
     console.print(f"[bold green]Seed config written:[/] {out}")
+
+
+@app.command("resume-state")
+def resume_state(
+    state_path: Annotated[Path, typer.Argument(help="Path to saved runner state JSON.")],
+    generations: Annotated[int, typer.Option(min=1)] = 4,
+    mode: Annotated[str, typer.Option(help="Evaluation backend (simulate/full).")] = "simulate",
+    seed: Annotated[int, typer.Option()] = 0,
+    out: Annotated[Path, typer.Option()] = Path("runs/frontier.json"),
+) -> None:
+    """Resume from a saved state and continue for more generations."""
+    runner = EvolutionRunner.load_state(state_path, mode=mode)
+    runner.rng.seed(seed)
+    runner.run(generations)
+    runner.save_frontier(out)
+    console.print(f"[bold green]Frontier written:[/] {out}")
+
+
+@app.command("prune-checkpoints")
+def prune_checkpoints_cmd(
+    checkpoint_dir: Annotated[
+        Path, typer.Argument(help="Directory containing checkpoints to prune.")
+    ] = Path("runs/checkpoints"),
+    frontier_path: Annotated[
+        Path | None,
+        typer.Option(help="Frontier JSON to keep (ids referenced will be retained)."),
+    ] = None,
+    state_path: Annotated[
+        Path | None,
+        typer.Option(help="State JSON to keep (ids referenced will be retained)."),
+    ] = None,
+    dry_run: Annotated[
+        bool, typer.Option(help="Show what would be removed without deleting.")
+    ] = False,
+) -> None:
+    """Delete checkpoints not referenced by the provided frontier/state."""
+    kept, removed = prune_checkpoints(
+        checkpoint_dir=checkpoint_dir,
+        frontier_path=frontier_path,
+        state_path=state_path,
+        dry_run=dry_run,
+    )
+    console.print(f"[bold]Kept:[/] {len(kept)} checkpoints")
+    console.print(f"[bold]Removed:[/] {len(removed)} checkpoints" + (" (dry run)" if dry_run else ""))
+    if dry_run and removed:
+        console.print("Would remove:")
+        for path in removed:
+            console.print(f"- {path}")
 
 
 def main() -> None:

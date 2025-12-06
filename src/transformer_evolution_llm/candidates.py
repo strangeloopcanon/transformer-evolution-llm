@@ -35,11 +35,42 @@ class Candidate:
         return {
             "id": self.ident,
             "parent": self.parent,
+            "parent_checkpoint": str(self.parent_checkpoint) if self.parent_checkpoint else None,
+            "seed_state_path": str(self.seed_state_path) if self.seed_state_path else None,
             "rung": self.rung,
             "status": self.status,
             "metrics": self.metrics,
             "spec": self.spec.model_dump(mode="python"),
+            "checkpoint": str(self.checkpoint) if self.checkpoint else None,
         }
+
+    @classmethod
+    def from_json(cls, data: dict[str, Any]) -> Candidate:
+        spec_data = data.get("spec")
+        if not isinstance(spec_data, dict):
+            raise ValueError("Candidate spec missing in state.")
+        ident = str(data.get("id"))
+        parent_raw = data.get("parent")
+        parent = str(parent_raw) if parent_raw is not None else None
+        parent_checkpoint = (
+            Path(data["parent_checkpoint"]) if data.get("parent_checkpoint") else None
+        )
+        seed_state_path = Path(data["seed_state_path"]) if data.get("seed_state_path") else None
+        checkpoint = Path(data["checkpoint"]) if data.get("checkpoint") else None
+        metrics = data.get("metrics", {}) or {}
+        if not isinstance(metrics, dict):
+            metrics = {}
+        return cls(
+            ident=ident,
+            spec=ArchitectureSpec(**spec_data),
+            parent=parent,
+            parent_checkpoint=parent_checkpoint,
+            seed_state_path=seed_state_path,
+            rung=int(data.get("rung", 0)),
+            status=data.get("status", "pending"),
+            metrics=metrics,
+            checkpoint=checkpoint,
+        )
 
 
 ObjectiveDirection = Literal["max", "min"]

@@ -1,0 +1,286 @@
+model:
+  name: phi-tiny-small-frontier-rich
+  emb:
+    dim: 512
+    vocab: 50257
+    rope: null
+    dropout: 0.0
+  blocks:
+  - name: dense-stem-0
+    attn:
+      kind: GQA
+      heads: 8
+      head_dim: 64
+      rope: yarn
+      rope_theta: null
+      sw: 32
+      kv_groups: 2
+      dropout: 0.0
+      qk_norm_max: null
+      gating_pos: output
+      gating_op: diagonal
+      sparsity: sliding
+      block_size: null
+      block_stride: null
+      global_stride: 64
+      dilation: null
+      selector: dsa
+      selector_topk: 32
+      selector_heads: 4
+      selector_dim: 64
+      selector_rope: none
+      selector_detach: false
+    ffn:
+      type: dense
+      hidden: 2048
+      activation: swiglu
+      dropout: 0.0
+    ssm: null
+    extras:
+    - type: retro
+      memory_tokens: 256
+      stride: 32
+      aggregator: gate
+      gating_weight: 0.25
+    - type: custom
+      name: feedback_gate
+      params:
+        type: feedback
+        source_block: 0
+        strength: 0.12
+    - type: retro
+      memory_tokens: 459
+      stride: 52
+      aggregator: gate
+      gating_weight: 0.25405611518502214
+    - type: retro
+      memory_tokens: 459
+      stride: 52
+      aggregator: gate
+      gating_weight: 0.25405611518502214
+    - type: gated
+      targets:
+      - attn
+      - ffn
+      init_weight: 0.20137604255534058
+      learnable: true
+  - name: tail-dense-0
+    attn:
+      kind: GQA
+      heads: 8
+      head_dim: 64
+      rope: yarn
+      rope_theta: null
+      sw: 96
+      kv_groups: 2
+      dropout: 0.0
+      qk_norm_max: null
+      gating_pos: none
+      gating_op: dense
+      sparsity: local_global
+      block_size: null
+      block_stride: null
+      global_stride: 64
+      dilation: null
+      selector: none
+      selector_topk: null
+      selector_heads: null
+      selector_dim: null
+      selector_rope: none
+      selector_detach: false
+    ffn:
+      type: dense
+      hidden: 2048
+      activation: swiglu
+      dropout: 0.0
+    ssm: null
+    extras:
+    - type: retro
+      memory_tokens: 512
+      stride: 64
+      aggregator: gate
+      gating_weight: 0.3
+    - type: gated
+      targets:
+      - ffn
+      - ssm
+      init_weight: 0.7507879883841465
+      learnable: true
+    - type: gated
+      targets:
+      - attn
+      - ffn
+      init_weight: 0.25
+      learnable: true
+    - type: retro
+      memory_tokens: 512
+      stride: 32
+      aggregator: gate
+      gating_weight: 0.47370498203860945
+  - name: tail-dense-1
+    attn:
+      kind: GQA
+      heads: 8
+      head_dim: 64
+      rope: yarn
+      rope_theta: null
+      sw: null
+      kv_groups: 2
+      dropout: 0.0
+      qk_norm_max: null
+      gating_pos: none
+      gating_op: dense
+      sparsity: none
+      block_size: null
+      block_stride: null
+      global_stride: null
+      dilation: null
+      selector: none
+      selector_topk: null
+      selector_heads: null
+      selector_dim: null
+      selector_rope: none
+      selector_detach: false
+    ffn:
+      type: dense
+      hidden: 2048
+      activation: swiglu
+      dropout: 0.0
+    ssm: null
+    extras:
+    - type: retro
+      memory_tokens: 512
+      stride: 64
+      aggregator: gate
+      gating_weight: 0.3
+  head:
+    tie_embeddings: true
+    vocab: 50257
+  norm: layernorm
+  recurrences:
+  - start: 8
+    end: 9
+    adapter: linear
+    adapter_dim: null
+    concat_prelude: false
+    init_state: zeros
+    noise_std: 0.020861383139453342
+    train_recurrence: 3
+    max_train_recurrence: 6
+    curriculum_fraction: 0.1534602889494413
+    test_recurrences:
+    - 1
+    - 2
+    - 4
+    - 8
+train:
+  lr: 0.0008
+  warmup: 500
+  clip: 1.0
+  bf16: false
+  grad_checkpoint: true
+  max_tokens: 280000
+  weight_decay: 0.02
+  seed: 1234
+  router_lb_coeff: 0.01
+  router_entropy_coeff: 0.005
+  entropy_threshold: 0.5
+  entropy_patience: 3
+  instability_threshold: 500.0
+  no_improve_patience: 20
+  improvement_tolerance: 0.001
+  ppl_stop_threshold: null
+  init_checkpoint: runs/checkpoints_small_frontier/xover-82-5b89.pt
+  optimizer:
+    name: adamw
+    lr: null
+    betas: null
+    eps: null
+    weight_decay: null
+data:
+  tokenizer: gpt2
+  hf_revision: main
+  seq_len: 256
+  batch_size: 1
+  workers: 0
+  shards:
+  - name: ag_news
+    split: train
+    weight: 0.25
+    cache_path: null
+    revision: null
+  - name: wikitext
+    split: wikitext-2-raw-v1
+    weight: 0.35
+    cache_path: null
+    revision: null
+  - name: codeparrot/github-code-clean
+    split: train
+    weight: 0.4
+    cache_path: null
+    revision: null
+  healing_shards: []
+  healing_tokens: null
+evolution:
+  rung0_thresholds:
+    gate_entropy_min: 0.0
+    gate_entropy_max: 4.0
+    min_layers: 12.0
+    min_moe_blocks: 3.0
+    min_selector_blocks: 2.0
+  rung1_tokens: 120000
+  rung2_tokens: 360000
+  population: 12
+  topk_keep: 0.5
+  crossover_prob: 0.5
+  parent_selection: lexicase
+  pareto_objectives:
+  - ppl_code
+  - ppl_math
+  - long_recall
+  - ppl_per_long_recall
+  - throughput
+  - ram
+  - novelty
+  - graph_entropy
+  - selector_blocks
+  - selector_topk_avg
+  objectives:
+    ppl_code: min
+    ppl_math: min
+    long_recall: max
+    ppl_per_long_recall: min
+    throughput: max
+    ram: min
+    novelty: max
+    graph_entropy: max
+    instability: min
+    selector_blocks: max
+    selector_topk_avg: max
+  composite_metrics:
+  - name: ppl_per_long_recall
+    op: ratio
+    numerator: ppl_code
+    denominator: long_recall
+    terms: {}
+    epsilon: 0.1
+  promotion_prob: 0.5
+  promotion_min_layers: 8
+  promotion_min_moe_blocks: 3
+  promotion_steps_multiplier: 1.5
+  promotion_tokens_multiplier: 1.5
+  promotion_min_router_entropy: 0.0
+  promotion_min_recurrence_gain: 0.0
+  promotion_max_instability: null
+  structural_elite_k: 3
+  structural_elite_weights:
+    layers: 1.0
+    moe_blocks: 3.0
+    selector_blocks: 2.0
+  mutation_steps: 2
+priors:
+  tokens_per_param: 4.0
+  window_scale: 6.0
+  rope_theta_default: 10000.0
+  prior_weight: 0.0
+  compute_penalty_weight: 0.0

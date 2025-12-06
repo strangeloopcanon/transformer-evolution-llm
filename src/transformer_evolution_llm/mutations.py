@@ -59,6 +59,49 @@ def mutate_topk(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
     return child
 
 
+def tune_experts(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
+    """Jitter MoE expert count and selector top-k to explore capacity/compute tradeoffs."""
+    child = clone_spec(spec)
+    moe_blocks = [b for b in child.model.blocks if isinstance(b.ffn, MoEFFNConfig)]
+    if moe_blocks:
+        target = rng.choice(moe_blocks)
+        if isinstance(target.ffn, MoEFFNConfig):
+            # adjust expert count within a modest range
+            candidates = [n for n in [8, 12, 16, 24, 32, 48] if n != target.ffn.n_experts]
+            if candidates:
+                target.ffn.n_experts = rng.choice(candidates)
+            # adjust k bounded by n_experts
+            possible_k = [k for k in [1, 2, 4, 8] if k <= target.ffn.n_experts]
+            if possible_k:
+                target.ffn.k = rng.choice(possible_k)
+    # selector top-k tweak on a random attention block
+    attn_blocks = [b for b in child.model.blocks if b.attn is not None]
+    if attn_blocks:
+        b = rng.choice(attn_blocks)
+        if b.attn and getattr(b.attn, "selector", "none") != "none":
+            b.attn.selector_topk = int(rng.choice([24, 32, 48, 64, 96, 128]))
+    return child
+
+
+def tune_router(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
+    """Jitter MoE router behaviour (sigmoid/softmax, bias detaching, shared expert)."""
+    child = clone_spec(spec)
+    moe_blocks = [b for b in child.model.blocks if isinstance(b.ffn, MoEFFNConfig)]
+    if not moe_blocks:
+        return child
+    target = rng.choice(moe_blocks)
+    if not isinstance(target.ffn, MoEFFNConfig):
+        return child
+    target.ffn.router_type = rng.choice(["softmax", "sigmoid"])
+    target.ffn.router_bias_detached = rng.choice([True, False])
+    target.ffn.shared_expert = rng.choice([True, False])
+    target.ffn.k = rng.choice(
+        [min(target.ffn.n_experts, k) for k in [2, 4, 8] if k <= target.ffn.n_experts]
+        or [target.ffn.k]
+    )
+    return child
+
+
 def shift_moe(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
     child = clone_spec(spec)
     blocks = child.model.blocks
@@ -166,6 +209,32 @@ def tune_kv(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
     return child
 
 
+def toggle_selector(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
+    """Flip selector-based sparsity on an attention block and retune its knobs."""
+    child = clone_spec(spec)
+    blocks = [b for b in child.model.blocks if b.attn is not None]
+    if not blocks:
+        return child
+    b = rng.choice(blocks)
+    if b.attn is None:
+        return child
+    if getattr(b.attn, "selector", "none") != "none":
+        b.attn.selector = "none"
+        b.attn.selector_topk = None
+        b.attn.selector_heads = None
+        b.attn.selector_dim = None
+        b.attn.selector_rope = "none"
+        b.attn.selector_detach = False
+    else:
+        b.attn.selector = "dsa"
+        b.attn.selector_topk = int(rng.choice([32, 64, 96, 128, 192]))
+        b.attn.selector_heads = int(rng.choice([1, 2, 4]))
+        b.attn.selector_dim = b.attn.head_dim
+        b.attn.selector_rope = rng.choice(["partial", "full", "none"])
+        b.attn.selector_detach = rng.choice([True, False])
+    return child
+
+
 def tune_rope(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
     child = clone_spec(spec)
     blocks = [b for b in child.model.blocks if b.attn is not None]
@@ -248,6 +317,133 @@ def tune_attn_gating(spec: ArchitectureSpec, rng: random.Random) -> Architecture
                 b.attn.gating_pos = rng.choice(["output", "value"])
             else:
                 b.attn.gating_op = rng.choice(["dense", "diagonal"])
+    return child
+
+
+def tune_attn_shape(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
+    """Jitter attention heads/head_dim/kv_groups while keeping model dim stable."""
+    child = clone_spec(spec)
+    blocks = [b for b in child.model.blocks if b.attn is not None]
+    if not blocks:
+        return child
+    b = rng.choice(blocks)
+    attn = b.attn
+    if attn is None:
+        return child
+    d_model = child.model.emb.dim
+    # pick heads that divide d_model reasonably
+    candidate_heads = [h for h in [4, 6, 8, 12, 16] if d_model % h == 0]
+    if not candidate_heads:
+        return child
+    heads = rng.choice(candidate_heads)
+    head_dim = d_model // heads
+    attn.heads = heads
+    attn.head_dim = head_dim
+    # kv_groups in [1, heads] preferring divisors
+    kv_candidates = [k for k in [1, 2, 4, 8, heads] if k <= heads]
+    attn.kv_groups = int(rng.choice(kv_candidates))
+    return child
+
+
+def tune_attn_sparsity(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
+    """Explore sparsity/window settings (local/global strides)."""
+    child = clone_spec(spec)
+    blocks = [b for b in child.model.blocks if b.attn is not None]
+    if not blocks:
+        return child
+    b = rng.choice(blocks)
+    attn = b.attn
+    if attn is None:
+        return child
+    sparsity_opts = ["none", "local_global"]
+    attn.sparsity = rng.choice(sparsity_opts)
+    if attn.sparsity == "local_global":
+        attn.sw = rng.choice([64, 96, 128, 192, 256])
+        attn.global_stride = rng.choice([32, 64, 96, 128])
+    else:
+        attn.sw = None
+        attn.global_stride = None
+    return child
+
+
+def tune_ffn_width_activation(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
+    """Adjust FFN hidden size and activation."""
+    child = clone_spec(spec)
+    if not child.model.blocks:
+        return child
+    block = rng.choice(child.model.blocks)
+    if block.ffn is None:
+        return child
+    # Only adjust dense FFNs
+    if getattr(block.ffn, "type", "dense") != "dense":
+        return child
+    hidden = getattr(block.ffn, "hidden", None)
+    if hidden:
+        scale = rng.uniform(0.75, 1.5)
+        new_hidden = max(256, min(int(hidden * scale), 8192))
+        block.ffn.hidden = new_hidden  # type: ignore[attr-defined]
+    block.ffn.activation = rng.choice(["swiglu", "gelu", "silu", "relu"])  # type: ignore[attr-defined]
+    return child
+
+
+def tune_router_coeffs(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
+    """Jitter MoE router temperatures and load-balance coefficients."""
+    child = clone_spec(spec)
+    moe_blocks = [b for b in child.model.blocks if isinstance(b.ffn, MoEFFNConfig)]
+    if not moe_blocks:
+        return child
+    block = rng.choice(moe_blocks)
+    if not isinstance(block.ffn, MoEFFNConfig):
+        return child
+    block.ffn.router_temperature = rng.choice([None, rng.uniform(0.3, 2.0)])  # type: ignore[attr-defined]
+    block.ffn.router_lb_weight = rng.choice([None, rng.uniform(0.0, 0.1)])  # type: ignore[attr-defined]
+    block.ffn.router_aux_weight = rng.choice([None, rng.uniform(0.0, 0.1)])  # type: ignore[attr-defined]
+    return child
+
+
+def tune_retro(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
+    """Adjust retro memory slots/stride and gating."""
+    child = clone_spec(spec)
+    if not child.model.blocks:
+        return child
+    block = rng.choice(child.model.blocks)
+    # Ensure a retro extra exists
+    retro = None
+    for extra in block.extras:
+        if isinstance(extra, RetroConfig):
+            retro = extra
+            break
+    if retro is None:
+        retro = RetroConfig(
+            memory_tokens=int(rng.choice([256, 512, 1024])),
+            stride=int(rng.choice([32, 64, 128])),
+            aggregator=rng.choice(["mean", "attention", "gate"]),
+            gating_weight=rng.uniform(0.1, 0.5),
+        )
+        block.extras.append(retro)
+    else:
+        retro.memory_tokens = int(rng.choice([256, 512, 768, 1024]))  # type: ignore[attr-defined]
+        retro.stride = int(rng.choice([16, 32, 64, 128]))  # type: ignore[attr-defined]
+        retro.aggregator = rng.choice(["mean", "attention", "gate"])  # type: ignore[attr-defined]
+        retro.gating_weight = rng.uniform(0.1, 0.5)  # type: ignore[attr-defined]
+    return child
+
+
+def toggle_qk_norm(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
+    """Toggle QK norm clamp."""
+    child = clone_spec(spec)
+    blocks = [b for b in child.model.blocks if b.attn is not None]
+    if not blocks:
+        return child
+    b = rng.choice(blocks)
+    attn = b.attn
+    if attn is None:
+        return child
+    current = getattr(attn, "qk_norm_max", None)
+    if current is None:
+        attn.qk_norm_max = rng.choice([0.5, 1.0, 2.0, 4.0])
+    else:
+        attn.qk_norm_max = None
     return child
 
 
@@ -364,6 +560,7 @@ REGISTRY: dict[str, MutationFn] = {
     "dense_to_moe": dense_to_moe,
     "mutate_topk": mutate_topk,
     "shift_moe": shift_moe,
+    "tune_router": tune_router,
     "make_gqa": make_gqa,
     "toggle_precision": toggle_precision,
     "insert_retro_module": insert_retro_module,
@@ -371,18 +568,46 @@ REGISTRY: dict[str, MutationFn] = {
     "toggle_gated_mix": toggle_gated_mix,
     "toggle_ssm": toggle_ssm,
     "tune_kv": tune_kv,
+    "toggle_selector": toggle_selector,
     "tune_rope": tune_rope,
+    "tune_attn_shape": tune_attn_shape,
+    "tune_attn_sparsity": tune_attn_sparsity,
+    "tune_ffn_width_activation": tune_ffn_width_activation,
+    "tune_router_coeffs": tune_router_coeffs,
+    "tune_retro": tune_retro,
+    "toggle_qk_norm": toggle_qk_norm,
     "add_recurrence": add_recurrence,
     "tune_recurrence": tune_recurrence,
     "graph_jitter": graph_jitter,
+    "tune_experts": tune_experts,
     "template_mutation": lambda spec, rng: apply_template_mutation(spec, rng),
 }
 
 
 def mutate(
-    spec: ArchitectureSpec, rng: random.Random | None = None
+    spec: ArchitectureSpec,
+    rng: random.Random | None = None,
+    weights: dict[str, float] | None = None,
+    steps: int = 1,
 ) -> tuple[str, ArchitectureSpec]:
+    """Apply one or more registered mutations. If weights provided, sample by weight."""
     rng = rng or random.Random()  # noqa: S311  # nosec B311 - deterministic enough for search
-    name = rng.choice(list(REGISTRY))
-    mutated = REGISTRY[name](spec, rng)
-    return name, mutated
+    names = list(REGISTRY)
+
+    def _pick() -> str:
+        if weights:
+            w = [max(0.0, float(weights.get(n, 0.0))) for n in names]
+            if any(w):
+                total = sum(w) or 1.0
+                probs = [x / total for x in w]
+                return rng.choices(names, weights=probs, k=1)[0]
+        return rng.choice(names)
+
+    applied: list[str] = []
+    current = spec
+    for _ in range(max(1, steps)):
+        name = _pick()
+        current = REGISTRY[name](current, rng)
+        applied.append(name)
+    label = "+".join(applied) if len(applied) > 1 else applied[0]
+    return label, current

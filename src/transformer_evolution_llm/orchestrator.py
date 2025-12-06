@@ -6,6 +6,7 @@ import random
 import uuid
 from collections import Counter
 from pathlib import Path
+from typing import Any
 
 import ujson as json
 from rich.console import Console
@@ -62,6 +63,20 @@ class EvolutionRunner:
             * (score_weight_overrides.get(k, 1.0) if score_weight_overrides else 1.0)
             for k, v in self.objective_dir.items()
         }
+        self.mutation_weights: dict[str, float] | None = None
+        self.mutation_steps: int = int(getattr(self.cfg, "mutation_steps", 1) or 1)
+        # Structural elite retention to keep deeper/MoE-rich candidates alive
+        self.structural_elite_k = int(getattr(self.cfg, "structural_elite_k", 2) or 0)
+        self.structural_elite_weights: dict[str, float] = {
+            "layers": 1.0,
+            "moe_blocks": 3.0,
+            "selector_blocks": 2.0,
+        }
+        cfg_elite_weights = getattr(self.cfg, "structural_elite_weights", None)
+        if isinstance(cfg_elite_weights, dict):
+            self.structural_elite_weights.update(
+                {k: float(v) for k, v in cfg_elite_weights.items() if k in self.structural_elite_weights}
+            )
         self.frontier = ParetoFrontier(self.objective_dir)
         self.rng = random.Random(seed)  # noqa: S311  # nosec B311 - seeded per run
         self.checker = StaticChecker(
@@ -135,6 +150,22 @@ class EvolutionRunner:
         candidate.metrics["layers"] = float(candidate.spec.model.n_layers)
         candidate.metrics["moe_blocks"] = float(candidate.spec.model.moe_block_count())
         candidate.metrics["graph_entropy"] = self._graph_entropy(candidate.spec)
+        # Selector-related proxies: count blocks with selector enabled and average top-k
+        selector_blocks: float = 0.0
+        selector_topk_sum: float = 0.0
+        selector_count: float = 0.0
+        for block in candidate.spec.model.blocks:
+            attn = block.attn
+            if attn and getattr(attn, "selector", "none") != "none":
+                selector_blocks += 1.0
+                topk_val = getattr(attn, "selector_topk", None)
+                if topk_val is not None:
+                    selector_topk_sum += float(topk_val)
+                    selector_count += 1.0
+        candidate.metrics["selector_blocks"] = selector_blocks
+        candidate.metrics["selector_topk_avg"] = (
+            selector_topk_sum / selector_count if selector_count > 0 else 0.0
+        )
         # novelty vs parent or base
         ref = None
         if candidate.parent:
@@ -143,6 +174,18 @@ class EvolutionRunner:
         else:
             ref = self.base_spec
         candidate.metrics["novelty"] = float(self._structural_distance(ref, candidate.spec))
+        # Enforce rung0 thresholds even in live mode to block trivial models
+        thresholds = getattr(self.cfg, "rung0_thresholds", {}) or {}
+        min_layers = float(thresholds.get("min_layers", 0.0) or 0.0)
+        min_moe = float(thresholds.get("min_moe_blocks", 0.0) or 0.0)
+        min_selector = float(thresholds.get("min_selector_blocks", 0.0) or 0.0)
+        if (
+            candidate.metrics["layers"] < min_layers
+            or candidate.metrics["moe_blocks"] < min_moe
+            or candidate.metrics["selector_blocks"] < min_selector
+        ):
+            candidate.status = "failed"
+            return
         if self.mode == "live":
             static = self.checker.run(candidate.spec)
             candidate.metrics.update(static.metrics)
@@ -523,9 +566,24 @@ class EvolutionRunner:
     def _trim_pool(self) -> None:
         if len(self.pool) <= self.cfg.population:
             return
+        # Protect structural elites from trimming
+        elite_ids: set[str] = set()
+        if self.structural_elite_k > 0 and self.pool:
+            scored = [(self._structural_score(c), c) for c in self.pool]
+            scored.sort(key=lambda t: t[0], reverse=True)
+            elite_ids = {c.ident for _, c in scored[: self.structural_elite_k]}
         excess = len(self.pool) - self.cfg.population
-        removed = self.pool[:excess]
-        self.pool = self.pool[excess:]
+        removed: list[Candidate] = []
+        kept: list[Candidate] = []
+        for cand in self.pool:
+            if cand.ident in elite_ids:
+                kept.append(cand)
+            elif excess > 0:
+                removed.append(cand)
+                excess -= 1
+            else:
+                kept.append(cand)
+        self.pool = kept
         for candidate in removed:
             self._remove_candidate_artifacts(candidate)
 
@@ -560,7 +618,9 @@ class EvolutionRunner:
                 seed_state_path=seed_path,
             )
         parent = self._select_parent()
-        name, spec = mutate(parent.spec, self.rng)
+        name, spec = mutate(
+            parent.spec, self.rng, self.mutation_weights, steps=getattr(self, "mutation_steps", 1)
+        )
         child = Candidate(
             ident=self._new_id(name),
             spec=spec,
@@ -569,6 +629,19 @@ class EvolutionRunner:
         )
         self._parents[child.ident] = [parent.ident]
         return child
+
+    def _structural_score(self, cand: Candidate) -> float:
+        """Score structural richness to keep depth/MoE/selector candidates alive."""
+        metrics = cand.metrics
+        layers = float(metrics.get("layers") or cand.spec.model.n_layers)
+        moe_blocks = float(metrics.get("moe_blocks") or 0.0)
+        selector_blocks = float(metrics.get("selector_blocks") or 0.0)
+        w = self.structural_elite_weights
+        return (
+            w.get("layers", 0.0) * layers
+            + w.get("moe_blocks", 0.0) * moe_blocks
+            + w.get("selector_blocks", 0.0) * selector_blocks
+        )
 
     def frontier_table(self) -> Table:
         table = Table(title="Pareto Frontier")
@@ -589,6 +662,113 @@ class EvolutionRunner:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(self.frontier.to_json(), indent=2))
         console.print(f"Frontier saved to {path}")
+
+    def save_state(self, path: Path) -> None:
+        """Persist runner state for resuming later."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        seed_val: int | None = None
+        try:
+            # random.Random does not expose the seed value directly.
+            seed_val = None
+        except Exception:
+            seed_val = None
+        state: dict[str, Any] = {
+            "seed": seed_val,
+            "rng_state": self.rng.getstate(),
+            "counter": self.counter,
+            "checkpoint_dir": str(self.checkpoint_dir),
+            "init_checkpoint": str(self._init_checkpoint) if self._init_checkpoint else None,
+            "objective_dir": self.objective_dir,
+            "score_weights": self.score_weights,
+            "pool": [c.serialize() for c in self.pool],
+            "frontier": [c.ident for c in self.frontier.entries],
+            "parents": self._parents,
+            "history": [c.serialize() for c in self._history],
+            "mutation_weights": self.mutation_weights,
+            "mutation_steps": self.mutation_steps,
+            "structural_elite": {
+                "k": self.structural_elite_k,
+                "weights": self.structural_elite_weights,
+            },
+        }
+        path.write_text(json.dumps(state, indent=2))
+        console.print(f"State saved to {path}")
+
+    @classmethod
+    def load_state(
+        cls,
+        path: Path,
+        mode: str = "simulate",
+        score_weight_overrides: dict[str, float] | None = None,
+    ) -> EvolutionRunner:
+        """Rehydrate a runner from a saved state manifest."""
+        data = json.loads(path.read_text())
+        checkpoint_dir = Path(data.get("checkpoint_dir", "runs/checkpoints"))
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        # Rebuild candidates
+        pool: list[Candidate] = []
+        history: list[Candidate] = []
+        for item in data.get("pool", []):
+            pool.append(Candidate.from_json(item))
+        for item in data.get("history", []):
+            history.append(Candidate.from_json(item))
+        # Base spec: use the first candidate's spec as base
+        if not history and not pool:
+            raise ValueError("State file contains no candidates.")
+        base_spec = (history or pool)[0].spec.model_copy(deep=True)
+        evo_cfg = base_spec.evolution
+        seed_val = data.get("seed")
+        if not isinstance(seed_val, int):
+            seed_val = 0
+        runner = cls(
+            base_spec=base_spec,
+            evolution_cfg=evo_cfg,
+            mode=mode,
+            objective_dir=data.get("objective_dir"),
+            seed=seed_val,
+            score_weight_overrides=score_weight_overrides or data.get("score_weights"),
+        )
+        runner.mutation_weights = data.get("mutation_weights")
+        if "mutation_steps" in data:
+            try:
+                runner.mutation_steps = int(data["mutation_steps"])
+            except Exception:
+                pass
+        elite_cfg = data.get("structural_elite") or {}
+        try:
+            runner.structural_elite_k = int(elite_cfg.get("k", runner.structural_elite_k))
+            weights = elite_cfg.get("weights")
+            if isinstance(weights, dict):
+                runner.structural_elite_weights.update(
+                    {k: float(v) for k, v in weights.items() if k in runner.structural_elite_weights}
+                )
+        except Exception:
+            pass
+        runner.checkpoint_dir = checkpoint_dir
+        init_ckpt = data.get("init_checkpoint")
+        runner._init_checkpoint = Path(init_ckpt) if init_ckpt else None
+        runner.counter = int(data.get("counter", 0))
+        runner.pool = pool
+        runner._history = history
+        runner._parents = data.get("parents", {})
+        # Rebuild frontier entries by id lookup
+        id_to_candidate = {c.ident: c for c in pool}
+        frontier_ids = data.get("frontier", [])
+        runner.frontier._entries = [
+            id_to_candidate[cid] for cid in frontier_ids if cid in id_to_candidate
+        ]
+        # Restore RNG
+        rng_state = data.get("rng_state")
+        if rng_state:
+            # Best-effort restore; ignore if incompatible
+            if isinstance(rng_state, (list, tuple)):
+                try:
+                    runner.rng.setstate(tuple(rng_state))
+                except Exception:
+                    console.print(
+                        "[yellow]Warning:[/] failed to restore RNG state; continuing with new seed."
+                    )
+        return runner
 
     def _new_id(self, prefix: str) -> str:
         self.counter += 1
