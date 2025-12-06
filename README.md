@@ -50,6 +50,8 @@ Checkpoints live in `runs/checkpoints_phi_entropy_v2` (~6.3 GB). Frontier/line
 - Structured sparsity + gating: gated attention variants, sparsity (local_global/dilated), and per-block gated extras appear throughout; standard stacks rarely explore this combination automatically.
 - High structural entropy: block order and extras are reshuffled by crossover/mutation, yielding distinct lineages rather than a single scaffold with tuned hyperparameters.
 
+For a more detailed overview of how different evolutionary runs behaved – including the role of structural gates, seeds, mutation mix, and score weights – see `docs/evolution_takeaways.md`.
+
 ## Practical next steps
 
 - Reproduce the latest sweep (above) or export a seed for scaling: `scripts/export_seed.py <frontier_path> --id <candidate_id> --out seeds/<name>.pt`.
