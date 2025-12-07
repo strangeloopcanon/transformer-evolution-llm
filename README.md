@@ -19,29 +19,19 @@ Recent phi-creative sweeps (Pareto-uniform + lexicase) spawned 54 frontier survi
 - Selection uses Pareto/lexicase on PPL, throughput, long-recall proxies, novelty, and graph entropy to keep both simple and complex niches alive.
 - Frontier + lineage are JSON; checkpoints are stored per candidate for export or reseeding.
 
-## Current status (baseline, seed=84, graph-entropy push)
-
-Command (mps):  
-`AGENT_MODE=baseline .venv/bin/python scripts/run_live.py configs/seed_xover-48-9237.yaml --generations 160 --steps 256 --eval-batches 4 --device mps --checkpoint-dir runs/checkpoints_phi_entropy_v2 --out runs/frontier_phi_entropy_v2.json --seed 84 --cleanup-old-checkpoints`
-
-Core takeaway: raising rung budgets, adding `graph_entropy` to selection, and tightening promotion (≥8 layers, ≥2 MoE) brought back deep MoE/SSM/retro “hydras” without sacrificing PPL (~1.0–1.05). The frontier is now broad (99 survivors): shallow retro stacks for speed, and deep hybrids for structure.
-
-Notable seeds to scale next:
-- `xover-15-3ab4` — 17 layers, 7 MoE, 5 SSM, retro=10; `ppl≈1.00`, `throughput≈271 tok/s`, `graph_entropy≈2.71`.
-- `xover-72-d77d` — 19 layers, 8 MoE, 4 SSM, retro=11; `ppl≈1.01`, `throughput≈235 tok/s`, `graph_entropy≈2.70`.
-- `xover-106-72d2` — 14 layers, 8 MoE, 4 SSM, retro=7; `ppl≈1.05`, `throughput≈212 tok/s`, `graph_entropy≈2.83`.
-- `add_extra_combo-53-b0c4` — 15 layers, 6 MoE, 3 SSM, retro=9; `ppl≈1.00`, `throughput≈307 tok/s`, `graph_entropy≈2.70`.
-- Lighter deep option: `tune_rope-2-9a3e` — 12 layers, 5 MoE, 3 SSM, retro=7; `ppl≈1.00`, `throughput≈377 tok/s`.
-- Maximal structure probe: `xover-119-1d12` — 30 layers, 14 MoE, 8 SSM, retro=17; `ppl≈1.05`, `throughput≈5 tok/s`, `graph_entropy≈2.84` (use as an architecture study, not a throughput seed).
-
-Checkpoints live in `runs/checkpoints_phi_entropy_v2` (~6.3 GB). Frontier/lineage: `runs/frontier_phi_entropy_v2.json`, `runs/frontier_phi_entropy_v2_lineage.json`.
-
 ## Signals we keep seeing (from current + prior runs)
 
 - Memory + sparsity synergize: local_global attention with short-horizon retro keeps KV modest while improving perplexity and long-recall.
 - Hybrids beat single tricks: MoE + SSM + retro consistently top quality when budgets allow; toggling SSM quantifies the throughput tax.
 - Budget gating matters: with promotion + higher rung budgets, deep hydras (MoE/SSM/retro) become competitive; without it, shallow retro stacks dominate.
 - Training takeaways: retro is the reliable horizon lever; MoE and SSM only pay off when budgets rise and promotion is on. Diversity pressure (graph entropy, novelty, layers/MoE objectives) prevents collapse into shallow retro spam.
+
+## How constraints shape the frontier
+
+- Structural gates (e.g., minimum layers, expert blocks, selector blocks, memory blocks, and recurrences) define which architectural regime a run explores and prevent collapse into tiny, shallow models.
+- Seeds that already satisfy those gates keep evolution in a rich basin: deep, expert-heavy, or memory-heavy patterns emerge as variations on that seed instead of re-deriving basic depth from scratch.
+- Mutation mix and multi-step mutations decide which levers move most often; adjusting their weights shifts the frontier between expert-focused, memory-focused, or throughput-lean regimes under the same DSL.
+- Score weights and rung budgets say what “better” means: up-weighting long-range recall and structural metrics (and de-emphasizing throughput) allows complex multi-branch stacks to survive and improve instead of being out-selected early.
 
 ## How these differ from typical 2025 SOTA stacks
 
