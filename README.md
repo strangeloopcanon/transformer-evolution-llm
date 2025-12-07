@@ -216,6 +216,29 @@ PYTHONPATH=src python scripts/run_live.py configs/seed_xover-48-9237.yaml \
   --score-weight-ram 0.8 --score-weight-moe 1.0
 ```
 
+### Example frontier architectures (small surrogates)
+
+These are illustrative survivors from recent sweeps; they all use the same ~100 M–scale surrogate and live in the `runs/` JSONs so you can inspect or reseed them.
+
+- **Expert‑ and selector‑rich frontier**  
+  Source: `runs/frontier_small_frontier_rich_strict_next2.json`, id `toggle_selector+dense_to_moe-6-21f3`.  
+  - Depth: 13 transformer blocks.  
+  - Experts: 6 MoE FFNs (32 experts, top‑k≈4, shared expert enabled).  
+  - Selectors: 7 attention blocks with DSA selectors (2–4 heads, top‑k≈64–96).  
+  - Memory: retro extras on 10 blocks (256 memory tokens, stride 32, gated aggregator).  
+  - Metrics (surrogate): `ppl_code≈1.01`, `long_recall≈0.72`, moderate throughput on mps.  
+  This is a “dense‑sparse‑memory” stack where most of the depth participates in routing or memory, not just a single special layer.
+
+- **Memory‑heavy frontier (“hydra” regime)**  
+  Source: `runs/frontier_memory_frontier.json`.  
+  - Balanced long‑memory candidate: id `tune_retro+insert_retro_module-7-87f0`  
+    - Depth: 12 blocks; Experts: 5 MoE; Selectors: 6; Memory blocks: 8; Recurrences: 4.  
+    - Metrics: `ppl_code≈1.00`, `long_recall≈0.93` under the memory‑biased objective.  
+  - High‑capacity hydra candidate: id `xover-9-9b09`  
+    - Depth: 18 blocks; Experts: 8 MoE; Selectors: 9; Memory blocks: 10; Recurrences: 3.  
+    - Metrics: slightly worse perplexity but very high structural capacity, useful as a design probe.  
+  Together these show what happens when gates, mutation weights, and score weights are tuned toward “lots of memory and recurrence spread across depth” rather than pure throughput.
+
 ### Ablation harness
 
 Probe how much each motif matters for a frontier winner:
