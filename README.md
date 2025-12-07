@@ -206,7 +206,7 @@ PYTHONPATH=src python scripts/run_live.py configs/seed_xover-48-9237.yaml \
   --score-weight-ram 0.8 --score-weight-moe 1.0
 ```
 
-### Example frontier architectures
+### Discovered frontier architectures
 
 These are illustrative survivors from recent sweeps; they all use the same ~100 M–scale surrogate and live in the `runs/` JSONs so you can inspect or reseed them.
 
