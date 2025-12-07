@@ -33,6 +33,66 @@ Recent phi-creative sweeps (Pareto-uniform + lexicase) spawned 54 frontier survi
 - Mutation mix and multi-step mutations decide which levers move most often; adjusting their weights shifts the frontier between expert-focused, memory-focused, or throughput-lean regimes under the same DSL.
 - Score weights and rung budgets say what “better” means: up-weighting long-range recall and structural metrics (and de-emphasizing throughput) allows complex multi-branch stacks to survive and improve instead of being out-selected early.
 
+## Discovered frontier architectures
+
+These are illustrative survivors from recent sweeps; they all use the same ~100 M–scale surrogate and live in the `runs/` JSONs so you can inspect or reseed them.
+
+- **Expert‑ and selector‑rich frontier**  
+  Source: `runs/frontier_small_frontier_rich_strict_next2.json`, id `toggle_selector+dense_to_moe-6-21f3`.  
+  - Depth: 13 transformer blocks.  
+  - Experts: 6 MoE FFNs (32 experts, top‑k≈4, shared expert enabled).  
+  - Selectors: 7 attention blocks with DSA selectors (2–4 heads, top‑k≈64–96).  
+  - Memory: retro extras on 10 blocks (256 memory tokens, stride 32, gated aggregator).  
+  - Metrics (surrogate): `ppl_code≈1.01`, `long_recall≈0.72`, moderate throughput on mps.  
+  This is a “dense‑sparse‑memory” stack where most of the depth participates in routing or memory, not just a single special layer.
+
+```mermaid
+flowchart LR
+  E1[Embed] --> D1[Depth: 13 blocks]
+  D1 --> M1[MoE: 6 blocks]
+  D1 --> S1[Selectors: 7 blocks]
+  D1 --> R1[Retro extras: 10 blocks]
+  M1 --> O1[Head]
+  S1 --> O1
+  R1 --> O1
+```
+
+- **Memory‑heavy frontier (“hydra” regime)**  
+  Source: `runs/frontier_memory_frontier.json`.  
+  - Balanced long‑memory candidate: id `tune_retro+insert_retro_module-7-87f0`  
+    - Depth: 12 blocks; Experts: 5 MoE; Selectors: 6; Memory blocks: 8; Recurrences: 4.  
+    - Metrics: `ppl_code≈1.00`, `long_recall≈0.93` under the memory‑biased objective.  
+  - High‑capacity hydra candidate: id `xover-9-9b09`  
+    - Depth: 18 blocks; Experts: 8 MoE; Selectors: 9; Memory blocks: 10; Recurrences: 3.  
+    - Metrics: slightly worse perplexity but very high structural capacity, useful as a design probe.  
+  Together these show what happens when gates, mutation weights, and score weights are tuned toward “lots of memory and recurrence spread across depth” rather than pure throughput.
+
+```mermaid
+flowchart LR
+  E2[Embed] --> D2[Depth: 12 blocks]
+  D2 --> M2[MoE: 5 blocks]
+  D2 --> S2[Selectors: 6 blocks]
+  D2 --> R2[Memory blocks: 8]
+  D2 --> C2[Recurrences: 4]
+  M2 --> O2[Head]
+  S2 --> O2
+  R2 --> O2
+  C2 --> O2
+```
+
+```mermaid
+flowchart LR
+  E3[Embed] --> D3[Depth: 18 blocks]
+  D3 --> M3[MoE: 8 blocks]
+  D3 --> S3[Selectors: 9 blocks]
+  D3 --> R3[Memory blocks: 10]
+  D3 --> C3[Recurrences: 3]
+  M3 --> O3[Head]
+  S3 --> O3
+  R3 --> O3
+  C3 --> O3
+```
+
 ## How these differ from typical 2025 SOTA stacks
 
 - Multi-branch memory: most candidates embed retro modules in many blocks (5–12 inserts) plus occasional recurrences, unlike vanilla decoder-only stacks with one attention path.
@@ -204,66 +264,6 @@ PYTHONPATH=src python scripts/run_live.py configs/seed_xover-48-9237.yaml \
   --parent-selection lexicase \
   --score-weight-long-recall 1.2 --score-weight-throughput 1.0 \
   --score-weight-ram 0.8 --score-weight-moe 1.0
-```
-
-### Discovered frontier architectures
-
-These are illustrative survivors from recent sweeps; they all use the same ~100 M–scale surrogate and live in the `runs/` JSONs so you can inspect or reseed them.
-
-- **Expert‑ and selector‑rich frontier**  
-  Source: `runs/frontier_small_frontier_rich_strict_next2.json`, id `toggle_selector+dense_to_moe-6-21f3`.  
-  - Depth: 13 transformer blocks.  
-  - Experts: 6 MoE FFNs (32 experts, top‑k≈4, shared expert enabled).  
-  - Selectors: 7 attention blocks with DSA selectors (2–4 heads, top‑k≈64–96).  
-  - Memory: retro extras on 10 blocks (256 memory tokens, stride 32, gated aggregator).  
-  - Metrics (surrogate): `ppl_code≈1.01`, `long_recall≈0.72`, moderate throughput on mps.  
-  This is a “dense‑sparse‑memory” stack where most of the depth participates in routing or memory, not just a single special layer.
-
-```mermaid
-flowchart LR
-  E1[Embed] --> D1[Depth: 13 blocks]
-  D1 --> M1[MoE: 6 blocks]
-  D1 --> S1[Selectors: 7 blocks]
-  D1 --> R1[Retro extras: 10 blocks]
-  M1 --> O1[Head]
-  S1 --> O1
-  R1 --> O1
-```
-
-- **Memory‑heavy frontier (“hydra” regime)**  
-  Source: `runs/frontier_memory_frontier.json`.  
-  - Balanced long‑memory candidate: id `tune_retro+insert_retro_module-7-87f0`  
-    - Depth: 12 blocks; Experts: 5 MoE; Selectors: 6; Memory blocks: 8; Recurrences: 4.  
-    - Metrics: `ppl_code≈1.00`, `long_recall≈0.93` under the memory‑biased objective.  
-  - High‑capacity hydra candidate: id `xover-9-9b09`  
-    - Depth: 18 blocks; Experts: 8 MoE; Selectors: 9; Memory blocks: 10; Recurrences: 3.  
-    - Metrics: slightly worse perplexity but very high structural capacity, useful as a design probe.  
-  Together these show what happens when gates, mutation weights, and score weights are tuned toward “lots of memory and recurrence spread across depth” rather than pure throughput.
-
-```mermaid
-flowchart LR
-  E2[Embed] --> D2[Depth: 12 blocks]
-  D2 --> M2[MoE: 5 blocks]
-  D2 --> S2[Selectors: 6 blocks]
-  D2 --> R2[Memory blocks: 8]
-  D2 --> C2[Recurrences: 4]
-  M2 --> O2[Head]
-  S2 --> O2
-  R2 --> O2
-  C2 --> O2
-```
-
-```mermaid
-flowchart LR
-  E3[Embed] --> D3[Depth: 18 blocks]
-  D3 --> M3[MoE: 8 blocks]
-  D3 --> S3[Selectors: 9 blocks]
-  D3 --> R3[Memory blocks: 10]
-  D3 --> C3[Recurrences: 3]
-  M3 --> O3[Head]
-  S3 --> O3
-  R3 --> O3
-  C3 --> O3
 ```
 
 ### Ablation harness
