@@ -150,6 +150,97 @@ Start your next run from `configs/seed_mutate_topk.yaml`; if you provided `--out
 
 </details>
 
+<details>
+<summary>DSL examples for advanced architecture families</summary>
+
+These sketches show how the DSL can encode three high‑level families often seen in strong language models, without hard‑wiring any specific kernel.
+
+- **Hybrid linear + global attention stack** (majority fast linear/SSM layers with periodic full attention):
+
+```yaml
+model:
+  name: hybrid-linear-global
+  emb: {dim: 2048, vocab: 32000}
+  norm: rmsnorm
+  blocks:
+    - name: block-0-kernel
+      attn: null
+      ssm: {kind: mamba2, d_state: 64, d_conv: 4, dt_rank: 16, chunk: 1024, gate: 0.2}
+      ffn: {type: dense, hidden: 8192, activation: swiglu}
+    - name: block-1-global
+      attn:
+        kind: GQA
+        heads: 16
+        head_dim: 128
+        sparsity: local_global
+        sw: 256
+        global_stride: 1024
+        kv_groups: 2
+      ssm: null
+      ffn: {type: dense, hidden: 8192, activation: swiglu}
+```
+
+- **Sparse MoE + selector stack** (heavy MoE with routed experts and selector‑based attention):
+
+```yaml
+model:
+  name: moe-selector-stack
+  emb: {dim: 4096, vocab: 32000, rope: yarn}
+  blocks:
+    - name: block-0
+      attn:
+        kind: GQA
+        heads: 32
+        head_dim: 128
+        sparsity: local_global
+        sw: 128
+        global_stride: 512
+        kv_groups: 2
+        selector: dsa
+        selector_heads: 4
+        selector_topk: 64
+        selector_dim: 128
+        selector_rope: partial
+      ffn:
+        type: moe
+        hidden: 16384
+        n_experts: 64
+        k: 8
+        shared_expert: true
+        router_type: softmax
+        router_lb_weight: 0.01
+        router_aux_weight: 0.01
+```
+
+- **Multi‑memory, long‑horizon stack** (multiple retro modules plus layer‑range recurrences):
+
+```yaml
+model:
+  name: multi-memory-recurrent
+  emb: {dim: 3072, vocab: 32000}
+  blocks:
+    - name: block-0
+      attn: {kind: GQA, heads: 24, head_dim: 128, sparsity: local_global, sw: 256, global_stride: 1024}
+      ffn: {type: dense, hidden: 12288, activation: swiglu}
+      extras:
+        - type: retro
+          memory_tokens: 512
+          stride: 32
+          aggregator: gate
+          gating_weight: 0.25
+  recurrences:
+    - start: 2
+      end: 6
+      adapter: gated
+      train_recurrence: 1
+      max_train_recurrence: 4
+      test_recurrences: [1, 2, 4, 8]
+```
+
+In each case, evolution can mutate and combine these motifs (via SSM branches, selectors, MoE experts, retro modules, and recurrences) instead of being limited to a single hand‑crafted scaffold.
+
+</details>
+
 ## Appendix: operator notes
 
 <details>
