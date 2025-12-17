@@ -44,3 +44,41 @@ def test_data_module_batches(monkeypatch):
     module = DataModule(cfg)
     batch = next(module.batches(max_tokens=16))
     assert batch.input_ids.shape[-1] == cfg.seq_len
+
+
+def test_data_module_accepts_config_in_split(monkeypatch):
+    from transformer_evolution_llm import data as data_module
+
+    class Loader:
+        @staticmethod
+        def from_pretrained(_name: str, **_kwargs: Any) -> DummyTokenizer:
+            return DummyTokenizer()
+
+    calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+
+    def fake_load_dataset(*args: Any, **kwargs: Any) -> DummyDataset:
+        calls.append((args, kwargs))
+        if kwargs.get("split") == "wikitext-2-raw-v1":
+            raise ValueError(
+                "Config name is missing.\n"
+                "Please pick one among the available configs: ['wikitext-2-raw-v1']"
+            )
+        return DummyDataset()
+
+    monkeypatch.setattr(data_module, "AutoTokenizer", Loader)
+    monkeypatch.setattr(data_module, "load_dataset", fake_load_dataset)
+
+    cfg = dsl.DataConfig(
+        tokenizer="hf-internal-testing/tiny-random-gpt2",
+        seq_len=8,
+        batch_size=1,
+        workers=0,
+        shards=[dsl.DatasetShard(name="wikitext", split="wikitext-2-raw-v1", weight=1.0)],
+    )
+    module = DataModule(cfg)
+    _ = next(module.batches(max_tokens=16))
+
+    assert len(calls) >= 2
+    retry_args, retry_kwargs = calls[1]
+    assert retry_args == ("wikitext", "wikitext-2-raw-v1")
+    assert retry_kwargs["split"] == "train"

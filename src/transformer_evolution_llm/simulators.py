@@ -49,7 +49,11 @@ class SimulatedEvaluator:
                 "capacity_overflow": overflow,
             }
         )
-        success = 0.9 < gate_entropy < 3.0 and overflow < 0.2
+        thresholds = getattr(candidate.spec.evolution, "rung0_thresholds", {}) or {}
+        ent_min = float(thresholds.get("gate_entropy_min", 0.9) or 0.9)
+        ent_max = float(thresholds.get("gate_entropy_max", 3.0) or 3.0)
+        overflow_max = float(thresholds.get("capacity_overflow_max", 0.2) or 0.2)
+        success = ent_min < gate_entropy < ent_max and overflow < overflow_max
         if not success:
             candidate.status = "failed"
         return success

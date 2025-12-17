@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -88,6 +89,16 @@ class ParetoFrontier:
         return list(self._entries)
 
     def update(self, candidate: Candidate) -> None:
+        # Ignore candidates missing objective metrics or producing NaN/Inf.
+        for metric in self.objectives:
+            val = candidate.metrics.get(metric)
+            if val is None:
+                return
+            try:
+                if not math.isfinite(float(val)):
+                    return
+            except (TypeError, ValueError):
+                return
         dominated = []
         for idx, existing in enumerate(self._entries):
             if self._dominates(candidate, existing):

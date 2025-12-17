@@ -76,7 +76,7 @@ def main(
         for ab in todo:
             mutated = apply_ablation(spec, ab)
             candidate = Candidate(ident=f"{base_id}__{ab}", spec=mutated)
-            data_module = DataModule(mutated.data)
+            data_module = DataModule(mutated.data, seed=int(getattr(mutated.train, "seed", 0) or 0))
             iterator = data_module.batches(max_tokens=mutated.train.max_tokens)
             metrics, checkpoint = trainer.train(
                 candidate=candidate,
@@ -108,4 +108,3 @@ def main(
 
 if __name__ == "__main__":
     app()
-

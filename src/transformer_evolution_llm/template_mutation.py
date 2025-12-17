@@ -12,11 +12,16 @@ import yaml
 
 from .dsl import (
     ArchitectureSpec,
+    AssociativeMemoryConfig,
     AttentionConfig,
     BlockConfig,
+    BranchRouterConfig,
+    ChunkMemoryConfig,
     CustomModuleConfig,
     DenseFFNConfig,
     GatedModuleConfig,
+    LayerScaleConfig,
+    MemoryTokensConfig,
     MoEFFNConfig,
     RetroConfig,
     SSMConfig,
@@ -166,6 +171,38 @@ def _add_extra(spec: ArchitectureSpec, params: TemplateAction, rng: random.Rando
                 gating_weight=extra_params.get("gating_weight", 0.25),
             )
         )
+    elif extra_type == "assoc_memory":
+        block.extras.append(
+            AssociativeMemoryConfig(
+                heads=int(extra_params.get("heads", 4)),
+                head_dim=int(extra_params.get("head_dim", 32)),
+                feature_map=extra_params.get("feature_map", "elu"),
+                dropout=float(extra_params.get("dropout", 0.0)),
+                gating_weight=float(extra_params.get("gating_weight", 0.1)),
+            )
+        )
+    elif extra_type == "memory_tokens":
+        block.extras.append(
+            MemoryTokensConfig(
+                tokens=int(extra_params.get("tokens", 16)),
+                heads=int(extra_params.get("heads", 2)),
+                head_dim=int(extra_params.get("head_dim", 32)),
+                dropout=float(extra_params.get("dropout", 0.0)),
+                init_std=float(extra_params.get("init_std", 0.02)),
+                gating_weight=float(extra_params.get("gating_weight", 0.1)),
+            )
+        )
+    elif extra_type == "chunk_memory":
+        block.extras.append(
+            ChunkMemoryConfig(
+                chunk_size=int(extra_params.get("chunk_size", max(8, spec.data.seq_len // 16))),
+                stride=extra_params.get("stride"),
+                heads=int(extra_params.get("heads", 2)),
+                head_dim=int(extra_params.get("head_dim", 32)),
+                dropout=float(extra_params.get("dropout", 0.0)),
+                gating_weight=float(extra_params.get("gating_weight", 0.1)),
+            )
+        )
     elif extra_type == "gated":
         targets = extra_params.get("targets") or ["attn", "ffn"]
         block.extras.append(
@@ -173,6 +210,24 @@ def _add_extra(spec: ArchitectureSpec, params: TemplateAction, rng: random.Rando
                 targets=targets,
                 init_weight=float(extra_params.get("init_weight", 0.2)),
                 learnable=extra_params.get("learnable", True),
+            )
+        )
+    elif extra_type == "branch_router":
+        block.extras.append(
+            BranchRouterConfig(
+                targets=extra_params.get("targets") or ["attn", "ffn", "ssm", "memory"],
+                router_type=extra_params.get("router_type", "token"),
+                hidden=extra_params.get("hidden"),
+                dropout=float(extra_params.get("dropout", 0.0)),
+                temperature=float(extra_params.get("temperature", 1.0)),
+            )
+        )
+    elif extra_type == "layer_scale":
+        block.extras.append(
+            LayerScaleConfig(
+                targets=extra_params.get("targets") or ["attn", "ffn"],
+                init=float(extra_params.get("init", 1e-5)),
+                learnable=bool(extra_params.get("learnable", True)),
             )
         )
     elif extra_type == "feedback":
@@ -345,11 +400,28 @@ def _generate_random_template(spec: ArchitectureSpec, rng: random.Random) -> Mut
         action = {
             "add_extra": {
                 "selector": rng.choice(["random", "random_moe", "random_ssm"]),
-                "extra_type": rng.choice(["gated", "retro", "feedback"]),
+                "extra_type": rng.choice(
+                    [
+                        "gated",
+                        "retro",
+                        "assoc_memory",
+                        "memory_tokens",
+                        "chunk_memory",
+                        "branch_router",
+                        "layer_scale",
+                        "feedback",
+                    ]
+                ),
                 "params": {
                     "gating_weight": rng.uniform(0.1, 0.5),
                     "memory_tokens": rng.randint(64, spec.data.seq_len),
+                    "tokens": rng.choice([8, 16, 32, 64]),
+                    "chunk_size": rng.choice([16, 32, 64, 128, 256]),
+                    "heads": rng.choice([2, 4, 8]),
+                    "head_dim": rng.choice([16, 32, 64]),
                     "strength": rng.uniform(0.05, 0.3),
+                    "temperature": rng.uniform(0.7, 1.5),
+                    "init": rng.choice([1e-6, 1e-5, 1e-4]),
                 },
             }
         }

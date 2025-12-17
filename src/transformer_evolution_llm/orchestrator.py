@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import random
 import uuid
 from collections import Counter
@@ -17,6 +18,7 @@ from .crossover import merge_checkpoints, splice_blocks
 from .data import DataModule
 from .dsl import ArchitectureSpec, CompositeMetricConfig, EvolutionConfig
 from .evaluation import StaticChecker, estimate_params
+from .mutations import REGISTRY as MUTATION_REGISTRY
 from .mutations import mutate
 from .simulators import evaluator_for_mode
 from .trainer import FullWeightTrainer
@@ -44,6 +46,31 @@ def default_objectives() -> ObjectiveDir:
 class EvolutionRunner:
     """Coordinates mutation, evaluation, and frontier tracking."""
 
+    @staticmethod
+    def _empty_device_cache() -> None:
+        try:
+            import torch
+        except Exception:
+            return
+        if torch.backends.cuda.is_built() and torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
+            torch.mps.empty_cache()
+
+    @staticmethod
+    def _is_resource_error(exc: BaseException) -> bool:
+        msg = str(exc).lower()
+        return any(
+            token in msg
+            for token in (
+                "out of memory",
+                "cuda error",
+                "mps backend out of memory",
+                "resource exhausted",
+                "allocation failed",
+            )
+        )
+
     def __init__(
         self,
         base_spec: ArchitectureSpec,
@@ -57,7 +84,17 @@ class EvolutionRunner:
         self.cfg = evolution_cfg
         self.mode = mode
         config_objectives = getattr(self.cfg, "objectives", None)
-        self.objective_dir = objective_dir or config_objectives or default_objectives()
+        if objective_dir is not None:
+            self.objective_dir = objective_dir
+        elif config_objectives is not None:
+            self.objective_dir = config_objectives
+        else:
+            pareto = getattr(self.cfg, "pareto_objectives", None) or []
+            if isinstance(pareto, list) and pareto:
+                defaults = default_objectives()
+                self.objective_dir = {name: defaults.get(name, "max") for name in pareto}
+            else:
+                self.objective_dir = default_objectives()
         self.score_weights = {
             k: (1.0 if v == "max" else -1.0)
             * (score_weight_overrides.get(k, 1.0) if score_weight_overrides else 1.0)
@@ -65,6 +102,23 @@ class EvolutionRunner:
         }
         self.mutation_weights: dict[str, float] | None = None
         self.mutation_steps: int = int(getattr(self.cfg, "mutation_steps", 1) or 1)
+        self._adaptive_mutation = bool(getattr(self.cfg, "adaptive_mutation", False))
+        self._adaptive_mutation_eta = float(getattr(self.cfg, "adaptive_mutation_eta", 0.1) or 0.1)
+        self._adaptive_mutation_min = float(
+            getattr(self.cfg, "adaptive_mutation_min_weight", 0.05) or 0.05
+        )
+        self._adaptive_mutation_max = float(
+            getattr(self.cfg, "adaptive_mutation_max_weight", 5.0) or 5.0
+        )
+        self._mutation_success: dict[str, float] = {}
+        self._mutation_counts: dict[str, int] = {}
+        self.archive: dict[str, Candidate] = {}
+        self.archive_max_elites = int(getattr(self.cfg, "archive_max_elites", 0) or 0)
+        if (
+            getattr(self.cfg, "parent_selection", "weighted") == "map_elites"
+            and self.archive_max_elites <= 0
+        ):
+            self.archive_max_elites = max(1, int(getattr(self.cfg, "population", 12) or 12))
         # Structural elite retention to keep deeper/MoE-rich candidates alive
         self.structural_elite_k = int(getattr(self.cfg, "structural_elite_k", 2) or 0)
         self.structural_elite_weights: dict[str, float] = {
@@ -75,17 +129,39 @@ class EvolutionRunner:
         cfg_elite_weights = getattr(self.cfg, "structural_elite_weights", None)
         if isinstance(cfg_elite_weights, dict):
             self.structural_elite_weights.update(
-                {k: float(v) for k, v in cfg_elite_weights.items() if k in self.structural_elite_weights}
+                {
+                    k: float(v)
+                    for k, v in cfg_elite_weights.items()
+                    if k in self.structural_elite_weights
+                }
             )
         self.frontier = ParetoFrontier(self.objective_dir)
         self.rng = random.Random(seed)  # noqa: S311  # nosec B311 - seeded per run
+        thresholds = getattr(self.cfg, "rung0_thresholds", {}) or {}
+
+        def _threshold(key: str, default: float) -> float:
+            raw = thresholds.get(key)
+            if raw is None:
+                return default
+            try:
+                return float(raw)
+            except (TypeError, ValueError):
+                return default
+
         self.checker = StaticChecker(
-            max_params=8.0e9,
-            max_kv_bytes=64_000,
-            min_throughput=0.5,
+            max_params=_threshold("max_params", 8.0e9),
+            max_kv_bytes=_threshold("max_kv_bytes_per_token", 64_000.0),
+            min_throughput=_threshold("min_throughput_proxy", 0.5),
         )
         self.trainer = FullWeightTrainer() if mode == "live" else None
-        self.data_module = DataModule(base_spec.data) if mode == "live" else None
+        self.data_module = None
+        if mode == "live":
+            seed_value = int(getattr(base_spec.train, "seed", 0) or 0)
+            try:
+                self.data_module = DataModule(base_spec.data, seed=seed_value)
+            except TypeError:
+                # Allow tests or external shims that provide a simplified DataModule signature.
+                self.data_module = DataModule(base_spec.data)
         self.evaluator = (
             None if mode == "live" else evaluator_for_mode(mode, checker=self.checker, seed=seed)
         )
@@ -99,6 +175,7 @@ class EvolutionRunner:
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
         init_ckpt = getattr(base_spec.train, "init_checkpoint", None)
         self._init_checkpoint: Path | None = Path(init_ckpt) if init_ckpt else None
+        self.weight_inheritance = str(getattr(self.cfg, "weight_inheritance", "parent") or "parent")
         # lineage tracking: candidate id -> list of parent ids
         self._parents: dict[str, list[str]] = {}
         self._history: list[Candidate] = []
@@ -124,26 +201,67 @@ class EvolutionRunner:
         )
         self._promotion_max_instability = getattr(self.cfg, "promotion_max_instability", None)
 
-    def run(self, generations: int) -> list[Candidate]:
-        base_candidate = Candidate(
-            ident=self._new_id("seed"), spec=self.base_spec.model_copy(deep=True)
-        )
+    def _cleanup_seed_state(self, candidate: Candidate) -> None:
+        """Remove intermediate crossover seed checkpoints when no longer needed."""
+        seed_state_path = candidate.seed_state_path
+        if seed_state_path is None:
+            return
         if self._init_checkpoint is not None:
-            base_candidate.seed_state_path = self._init_checkpoint
-        self._parents[base_candidate.ident] = []
-        self._evaluate_candidate(base_candidate)
-        self.pool.append(base_candidate)
-        self._history.append(base_candidate)
-        survivors = [base_candidate]
+            try:
+                if seed_state_path.resolve() == self._init_checkpoint.resolve():
+                    candidate.seed_state_path = None
+                    return
+            except OSError:
+                pass
+        try:
+            seed_state_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        candidate.seed_state_path = None
+
+    def _objective_metrics_ok(self, candidate: Candidate) -> bool:
+        if float(candidate.metrics.get("nan_seen", 0.0) or 0.0) > 0.0:
+            return False
+        for name in self.objective_dir:
+            val = candidate.metrics.get(name)
+            if val is None:
+                return False
+            try:
+                val_f = float(val)
+            except (TypeError, ValueError):
+                return False
+            if not math.isfinite(val_f):
+                return False
+        return True
+
+    def run(self, generations: int) -> list[Candidate]:
+        survivors: list[Candidate] = []
+        if not self.pool:
+            base_candidate = Candidate(
+                ident=self._new_id("seed"), spec=self.base_spec.model_copy(deep=True)
+            )
+            if self._init_checkpoint is not None:
+                base_candidate.seed_state_path = self._init_checkpoint
+            self._parents[base_candidate.ident] = []
+            self._evaluate_candidate(base_candidate)
+            if base_candidate.status == "completed":
+                self._update_archive(base_candidate)
+                survivors.append(base_candidate)
+            self.pool.append(base_candidate)
+            self._history.append(base_candidate)
         for _ in range(generations):
             candidate = self._spawn_candidate()
             console.print(f"[cyan]Evaluating[/] {candidate.ident}")
             self._evaluate_candidate(candidate)
             if candidate.status == "completed":
+                self._update_archive(candidate)
+                self._maybe_update_mutation_weights(candidate)
+            if candidate.status == "completed":
                 survivors.append(candidate)
             self.pool.append(candidate)
             self._history.append(candidate)
             self._trim_pool()
+            self._garbage_collect_checkpoints()
         return survivors
 
     def _evaluate_candidate(self, candidate: Candidate) -> None:
@@ -156,6 +274,11 @@ class EvolutionRunner:
         selector_count: float = 0.0
         # Memory proxies: count blocks with retro extras and number of recurrences
         memory_blocks: float = 0.0
+        ssm_blocks: float = 0.0
+        mla_blocks: float = 0.0
+        linear_blocks: float = 0.0
+        sparsity_blocks: float = 0.0
+        qk_norm_blocks: float = 0.0
         for block in candidate.spec.model.blocks:
             attn = block.attn
             if attn and getattr(attn, "selector", "none") != "none":
@@ -164,10 +287,23 @@ class EvolutionRunner:
                 if topk_val is not None:
                     selector_topk_sum += float(topk_val)
                     selector_count += 1.0
+            if attn is not None:
+                kind = str(getattr(attn, "kind", "MHA") or "MHA").upper()
+                if kind == "MLA":
+                    mla_blocks += 1.0
+                elif kind == "LINEAR":
+                    linear_blocks += 1.0
+                sparsity = str(getattr(attn, "sparsity", "none") or "none").lower()
+                if sparsity != "none" or getattr(attn, "sw", None) is not None:
+                    sparsity_blocks += 1.0
+                if getattr(attn, "qk_norm_max", None) is not None:
+                    qk_norm_blocks += 1.0
+            if block.ssm is not None:
+                ssm_blocks += 1.0
             # Count memory-bearing blocks via retro extras
             for extra in block.extras:
                 extra_type = getattr(extra, "type", type(extra).__name__).lower()
-                if "retro" in extra_type:
+                if extra_type in {"retro", "assoc_memory", "memory_tokens", "chunk_memory"}:
                     memory_blocks += 1.0
                     break
         candidate.metrics["selector_blocks"] = selector_blocks
@@ -175,6 +311,11 @@ class EvolutionRunner:
             selector_topk_sum / selector_count if selector_count > 0 else 0.0
         )
         candidate.metrics["memory_blocks"] = memory_blocks
+        candidate.metrics["ssm_blocks"] = ssm_blocks
+        candidate.metrics["mla_blocks"] = mla_blocks
+        candidate.metrics["linear_blocks"] = linear_blocks
+        candidate.metrics["sparsity_blocks"] = sparsity_blocks
+        candidate.metrics["qk_norm_blocks"] = qk_norm_blocks
         candidate.metrics["recurrences"] = float(len(candidate.spec.model.recurrences))
         # novelty vs parent or base
         ref = None
@@ -199,45 +340,74 @@ class EvolutionRunner:
             or candidate.metrics["recurrences"] < min_recurrences
         ):
             candidate.status = "failed"
+            self._cleanup_seed_state(candidate)
             return
         if self.mode == "live":
             static = self.checker.run(candidate.spec)
             candidate.metrics.update(static.metrics)
             if not static.ok:
                 candidate.status = "failed"
+                self._cleanup_seed_state(candidate)
                 return
             if self.trainer is None or self.data_module is None:
                 raise RuntimeError("Live mode requires trainer and data module.")
             # Prior-aware token budget
             params = float(estimate_params(candidate.spec))
             tokens_budget = int(candidate.spec.priors.tokens_per_param * params)
-            base_tokens = candidate.spec.train.max_tokens or self.cfg.rung2_tokens
+            base_rung2 = max(int(self.cfg.rung2_tokens), int(candidate.spec.train.max_tokens or 0))
+            base_rung1 = int(self.cfg.rung1_tokens)
             mult = 1.0
             if candidate.spec.model.n_layers >= 4:
                 mult += 0.2
             if candidate.spec.model.moe_block_count() >= 1:
                 mult += 0.1
-            scaled_tokens = int(min(base_tokens * mult, tokens_budget))
+            rung2_tokens = int(min(base_rung2 * mult, tokens_budget)) if tokens_budget > 0 else 0
+            rung1_tokens = int(min(base_rung1 * mult, rung2_tokens)) if rung2_tokens > 0 else 0
+            rung2_extra = max(0, rung2_tokens - rung1_tokens)
             # Multi-fidelity schedule: rung1 (short), possibly rung2 (full)
             base_steps = getattr(self.trainer, "steps", None)
             if not isinstance(base_steps, int):
                 base_steps = 100
             # Rung 1
             self.trainer.steps = max(1, int(base_steps * self._rung1_ratio))
-            batches = self.data_module.batches(max_tokens=scaled_tokens)
+            if rung1_tokens <= 0:
+                candidate.status = "failed"
+                return
+            batches = self.data_module.batches(max_tokens=rung1_tokens)
             seed_state = candidate.seed_state_path or candidate.parent_checkpoint
-            metrics1, checkpoint = self.trainer.train(
-                candidate=candidate,
-                spec=candidate.spec,
-                batch_iter=batches,
-                seed_state_path=seed_state,
-            )
+            if self.weight_inheritance == "scratch":
+                seed_state = None
+            elif self.weight_inheritance == "init" and self._init_checkpoint is not None:
+                seed_state = self._init_checkpoint
+            try:
+                metrics1, checkpoint = self.trainer.train(
+                    candidate=candidate,
+                    spec=candidate.spec,
+                    batch_iter=batches,
+                    seed_state_path=seed_state,
+                )
+            except Exception as exc:
+                console.print(f"[red]Candidate {candidate.ident} failed during rung1:[/] {exc}")
+                if self._is_resource_error(exc):
+                    self._empty_device_cache()
+                candidate.status = "failed"
+                candidate.checkpoint = None
+                self._cleanup_seed_state(candidate)
+                self._remove_candidate_artifacts(candidate)
+                return
             candidate.metrics.update(metrics1)
             candidate.checkpoint = checkpoint
+            if not self._objective_metrics_ok(candidate):
+                candidate.status = "failed"
+                self._cleanup_seed_state(candidate)
+                self._remove_candidate_artifacts(candidate)
+                candidate.checkpoint = None
+                return
             # Early stop heuristic: clearly poor ppl
             ppl1 = float(candidate.metrics.get("ppl_code", 1e9))
             threshold = self.ppl_stop_threshold
             if threshold is not None and ppl1 > threshold:
+                self._cleanup_seed_state(candidate)
                 candidate.status = "completed"
                 self._apply_composite_metrics(candidate)
                 self.frontier.update(candidate)
@@ -245,26 +415,49 @@ class EvolutionRunner:
                 self.trainer.steps = base_steps
                 return
             # Rung 2 (full)
+            if rung2_extra <= 0:
+                self._cleanup_seed_state(candidate)
+                candidate.status = "completed"
+                self._apply_composite_metrics(candidate)
+                self.frontier.update(candidate)
+                self.trainer.steps = base_steps
+                return
             self.trainer.steps = max(1, int(base_steps * self._rung2_ratio))
-            batches = self.data_module.batches(max_tokens=scaled_tokens)
-            metrics2, checkpoint = self.trainer.train(
-                candidate=candidate,
-                spec=candidate.spec,
-                batch_iter=batches,
-                seed_state_path=checkpoint,
-            )
+            batches = self.data_module.batches(max_tokens=rung2_extra)
+            try:
+                metrics2, checkpoint = self.trainer.train(
+                    candidate=candidate,
+                    spec=candidate.spec,
+                    batch_iter=batches,
+                    seed_state_path=checkpoint,
+                )
+            except Exception as exc:
+                console.print(f"[red]Candidate {candidate.ident} failed during rung2:[/] {exc}")
+                if self._is_resource_error(exc):
+                    self._empty_device_cache()
+                candidate.status = "failed"
+                candidate.checkpoint = None
+                self._cleanup_seed_state(candidate)
+                self._remove_candidate_artifacts(candidate)
+                # restore trainer steps
+                self.trainer.steps = base_steps
+                return
             candidate.metrics.update(metrics2)
             candidate.checkpoint = checkpoint
+            if not self._objective_metrics_ok(candidate):
+                candidate.status = "failed"
+                self._cleanup_seed_state(candidate)
+                self._remove_candidate_artifacts(candidate)
+                candidate.checkpoint = None
+                # restore trainer steps
+                self.trainer.steps = base_steps
+                return
             if candidate.seed_state_path is not None:
-                try:
-                    Path(candidate.seed_state_path).unlink(missing_ok=True)
-                except OSError:
-                    pass
-                candidate.seed_state_path = None
+                self._cleanup_seed_state(candidate)
             candidate.status = "completed"
             # Optional promotion rung: give complex candidates extra budget
-            if self._should_promote(candidate, tokens_budget, scaled_tokens):
-                self._run_promotion(candidate, base_steps, tokens_budget, scaled_tokens)
+            if self._should_promote(candidate, tokens_budget, rung2_tokens):
+                self._run_promotion(candidate, base_steps, tokens_budget, rung2_tokens)
             # Prior distance metric (not in objectives by default)
             candidate.metrics["prior_distance"] = self._prior_distance(candidate.spec)
             self._apply_composite_metrics(candidate)
@@ -325,20 +518,28 @@ class EvolutionRunner:
         if extra_tokens <= 0:
             return
         max_tokens = min(tokens_budget, used_tokens + extra_tokens)
+        promo_tokens = max(0, int(max_tokens - used_tokens))
+        if promo_tokens <= 0:
+            return
         promo_steps = max(1, int(base_steps * self._promotion_steps_multiplier))
         original_steps = self.trainer.steps
         try:
             self.trainer.steps = promo_steps
-            batches = self.data_module.batches(max_tokens=max_tokens)
+            batches = self.data_module.batches(max_tokens=promo_tokens)
             seed_state = candidate.checkpoint
-            metrics3, checkpoint3 = self.trainer.train(
-                candidate=candidate,
-                spec=candidate.spec,
-                batch_iter=batches,
-                seed_state_path=seed_state,
-            )
-            candidate.metrics.update(metrics3)
-            candidate.checkpoint = checkpoint3
+            try:
+                metrics3, checkpoint3 = self.trainer.train(
+                    candidate=candidate,
+                    spec=candidate.spec,
+                    batch_iter=batches,
+                    seed_state_path=seed_state,
+                )
+                candidate.metrics.update(metrics3)
+                candidate.checkpoint = checkpoint3
+            except Exception as exc:
+                console.print(f"[yellow]Promotion rung failed for {candidate.ident}:[/] {exc}")
+                if self._is_resource_error(exc):
+                    self._empty_device_cache()
         finally:
             self.trainer.steps = original_steps
 
@@ -358,10 +559,14 @@ class EvolutionRunner:
             if len(ba.extras) != len(bb.extras):
                 diff += 0.5
             if ba.attn and bb.attn:
+                if (ba.attn.kind or "MHA") != (bb.attn.kind or "MHA"):
+                    diff += 0.5
                 if (ba.attn.kv_groups or ba.attn.heads) != (bb.attn.kv_groups or bb.attn.heads):
                     diff += 0.5
                 if (ba.attn.rope or None) != (bb.attn.rope or None):
                     diff += 0.5
+                if bool(getattr(ba.attn, "alibi", False)) != bool(getattr(bb.attn, "alibi", False)):
+                    diff += 0.25
                 if ba.attn.sparsity != bb.attn.sparsity:
                     diff += 0.5
                 if (ba.attn.sw or None) != (bb.attn.sw or None):
@@ -529,13 +734,34 @@ class EvolutionRunner:
 
     def _select_parent(self) -> Candidate:
         strategy = getattr(self.cfg, "parent_selection", "weighted")
+        if strategy == "map_elites" and self.archive:
+            return self.rng.choice(list(self.archive.values()))
         if strategy == "pareto_uniform" and self.frontier.entries:
             return self.rng.choice(self.frontier.entries)
-        if strategy == "lexicase" and self.pool:
+        # Optionally restrict the parent pool to a top-k fraction to tune exploration/exploitation.
+        candidates = list(self.pool)
+        topk_keep = float(getattr(self.cfg, "topk_keep", 1.0) or 1.0)
+        if candidates and 0.0 < topk_keep < 1.0:
+            # Always keep the structural elites eligible as parents.
+            elite_ids: set[str] = set()
+            if self.structural_elite_k > 0:
+                scored = [(self._structural_score(c), c) for c in candidates]
+                scored.sort(key=lambda t: t[0], reverse=True)
+                elite_ids = {c.ident for _, c in scored[: self.structural_elite_k]}
+            scored_by_score = sorted(
+                candidates,
+                key=lambda cand: cand.score(self.score_weights),
+                reverse=True,
+            )
+            keep_n = max(1, int(round(topk_keep * len(scored_by_score))))
+            keep_ids = {c.ident for c in scored_by_score[:keep_n]}
+            keep_ids.update(elite_ids)
+            candidates = [c for c in candidates if c.ident in keep_ids]
+
+        if strategy == "lexicase" and candidates:
             # Lexicase: randomly order objectives; progressively filter to the best on each
             objectives = list(self.objective_dir.keys())
             self.rng.shuffle(objectives)
-            candidates = list(self.pool)
             for obj in objectives:
                 if not candidates:
                     break
@@ -574,32 +800,139 @@ class EvolutionRunner:
             if candidates:
                 return self.rng.choice(candidates)
         # Default weighted tournament among 3
-        contenders = self.rng.sample(self.pool, k=min(3, len(self.pool)))
+        contenders = self.rng.sample(
+            candidates or self.pool, k=min(3, len(candidates or self.pool))
+        )
         return max(contenders, key=lambda cand: cand.score(self.score_weights))
+
+    def _update_archive(self, candidate: Candidate) -> None:
+        if self.archive_max_elites <= 0:
+            return
+        layers = int(candidate.metrics.get("layers") or candidate.spec.model.n_layers)
+        moe_blocks = int(
+            candidate.metrics.get("moe_blocks") or candidate.spec.model.moe_block_count()
+        )
+        selector_blocks = int(candidate.metrics.get("selector_blocks") or 0)
+        memory_blocks = int(candidate.metrics.get("memory_blocks") or 0)
+        recurrences = int(candidate.metrics.get("recurrences") or 0)
+        mla_blocks = int(candidate.metrics.get("mla_blocks") or 0)
+        ssm_blocks = int(candidate.metrics.get("ssm_blocks") or 0)
+        sparsity_blocks = int(candidate.metrics.get("sparsity_blocks") or 0)
+        qk_norm_blocks = int(candidate.metrics.get("qk_norm_blocks") or 0)
+        linear_blocks = int(candidate.metrics.get("linear_blocks") or 0)
+
+        key = (
+            f"L{min(layers, 64)}"
+            f"_E{min(moe_blocks, 16)}"
+            f"_S{min(selector_blocks, 16)}"
+            f"_M{min(memory_blocks, 16)}"
+            f"_R{min(recurrences, 8)}"
+            f"_A{min(mla_blocks, 16)}"
+            f"_X{min(ssm_blocks, 16)}"
+            f"_P{min(sparsity_blocks, 16)}"
+            f"_Q{min(qk_norm_blocks, 16)}"
+            f"_N{min(linear_blocks, 16)}"
+        )
+        existing = self.archive.get(key)
+        if existing is None or candidate.score(self.score_weights) > existing.score(
+            self.score_weights
+        ):
+            self.archive[key] = candidate
+        if len(self.archive) > self.archive_max_elites:
+            worst_key = min(
+                self.archive,
+                key=lambda k: self.archive[k].score(self.score_weights),
+            )
+            self.archive.pop(worst_key, None)
+
+    def _maybe_update_mutation_weights(self, candidate: Candidate) -> None:
+        if not self._adaptive_mutation or not candidate.parent:
+            return
+        parent = next((c for c in self.pool if c.ident == candidate.parent), None)
+        if parent is None:
+            parent = next((c for c in self._history if c.ident == candidate.parent), None)
+        if parent is None:
+            return
+        delta = float(candidate.score(self.score_weights) - parent.score(self.score_weights))
+        reward = 1.0 if delta > 0.0 else 0.0
+        label = candidate.ident.rsplit("-", 2)[0]
+        names = [name for name in label.split("+") if name in MUTATION_REGISTRY]
+        if not names:
+            return
+        if self.mutation_weights is None:
+            self.mutation_weights = dict.fromkeys(MUTATION_REGISTRY, 1.0)
+        eta = max(1e-6, min(1.0, self._adaptive_mutation_eta))
+        for name in names:
+            self._mutation_counts[name] = int(self._mutation_counts.get(name, 0)) + 1
+            prev = float(self._mutation_success.get(name, 0.5))
+            updated = (1.0 - eta) * prev + eta * reward
+            self._mutation_success[name] = updated
+            lo = max(1e-6, self._adaptive_mutation_min)
+            hi = max(lo, self._adaptive_mutation_max)
+            self.mutation_weights[name] = lo + (hi - lo) * updated
 
     def _trim_pool(self) -> None:
         if len(self.pool) <= self.cfg.population:
             return
-        # Protect structural elites from trimming
+        frontier_ids = {cand.ident for cand in self.frontier.entries}
+        archive_ids = {cand.ident for cand in self.archive.values()}
+        # Protect structural elites from trimming (keep them in the parent pool).
         elite_ids: set[str] = set()
         if self.structural_elite_k > 0 and self.pool:
             scored = [(self._structural_score(c), c) for c in self.pool]
             scored.sort(key=lambda t: t[0], reverse=True)
             elite_ids = {c.ident for _, c in scored[: self.structural_elite_k]}
         excess = len(self.pool) - self.cfg.population
-        removed: list[Candidate] = []
-        kept: list[Candidate] = []
-        for cand in self.pool:
-            if cand.ident in elite_ids:
-                kept.append(cand)
-            elif excess > 0:
-                removed.append(cand)
-                excess -= 1
-            else:
-                kept.append(cand)
-        self.pool = kept
+        removable = [cand for cand in self.pool if cand.ident not in elite_ids]
+        removable.sort(key=lambda cand: cand.score(self.score_weights))
+        to_remove = {cand.ident for cand in removable[: max(0, excess)]}
+        removed = [cand for cand in self.pool if cand.ident in to_remove]
+        self.pool = [cand for cand in self.pool if cand.ident not in to_remove]
         for candidate in removed:
+            # Keep checkpoint artifacts for Pareto-frontier entries even if removed from pool.
+            if candidate.ident in frontier_ids or candidate.ident in archive_ids:
+                continue
             self._remove_candidate_artifacts(candidate)
+
+    def _garbage_collect_checkpoints(self) -> None:
+        """Remove orphaned checkpoint files to keep disk usage bounded.
+
+        During the run we may temporarily keep checkpoints for candidates that
+        were on the frontier when they were trimmed from the pool. If they later
+        fall off the frontier and are not retained as archive elites, their
+        checkpoints become unreachable. This GC keeps only checkpoints needed to
+        resume: pool + frontier + archive (+ any transient seed_state_path).
+        """
+
+        if not self.checkpoint_dir.exists():
+            return
+
+        keep: set[Path] = set()
+
+        def _add(path: Path | None) -> None:
+            if path is None:
+                return
+            try:
+                keep.add(Path(path).resolve())
+            except Exception:
+                return
+
+        for cand in self.pool:
+            _add(cand.checkpoint)
+            _add(cand.seed_state_path)
+        for cand in self.frontier.entries:
+            _add(cand.checkpoint)
+        for cand in self.archive.values():
+            _add(cand.checkpoint)
+            _add(cand.seed_state_path)
+
+        for file_path in self.checkpoint_dir.glob("*.pt"):
+            try:
+                if file_path.resolve() in keep:
+                    continue
+                file_path.unlink(missing_ok=True)
+            except OSError:
+                continue
 
     def _spawn_candidate(self) -> Candidate:
         if (
@@ -613,17 +946,19 @@ class EvolutionRunner:
             spec_data["model"]["blocks"] = [block.model_dump(mode="python") for block in blocks]
             spec = ArchitectureSpec(**spec_data)
             child_id = self._new_id("xover")
-            seed_path = self.checkpoint_dir / f"{child_id}_seed.pt"
-            merge_checkpoints(
-                child_spec=spec,
-                cut_a=cut_a,
-                cut_b=cut_b,
-                parent_a_blocks=len(parent_a.spec.model.blocks),
-                parent_b_blocks=len(parent_b.spec.model.blocks),
-                parent_a_ckpt=parent_a.checkpoint,
-                parent_b_ckpt=parent_b.checkpoint,
-                out_path=seed_path,
-            )
+            seed_path: Path | None = None
+            if self.weight_inheritance == "parent":
+                seed_path = self.checkpoint_dir / f"{child_id}_seed.pt"
+                merge_checkpoints(
+                    child_spec=spec,
+                    cut_a=cut_a,
+                    cut_b=cut_b,
+                    parent_a_blocks=len(parent_a.spec.model.blocks),
+                    parent_b_blocks=len(parent_b.spec.model.blocks),
+                    parent_a_ckpt=parent_a.checkpoint,
+                    parent_b_ckpt=parent_b.checkpoint,
+                    out_path=seed_path,
+                )
             self._parents[child_id] = [parent_a.ident, parent_b.ident]
             return Candidate(
                 ident=child_id,
@@ -700,6 +1035,10 @@ class EvolutionRunner:
             "history": [c.serialize() for c in self._history],
             "mutation_weights": self.mutation_weights,
             "mutation_steps": self.mutation_steps,
+            "archive_max_elites": self.archive_max_elites,
+            "archive": {k: v.ident for k, v in self.archive.items()},
+            "mutation_success": self._mutation_success,
+            "mutation_counts": self._mutation_counts,
             "structural_elite": {
                 "k": self.structural_elite_k,
                 "weights": self.structural_elite_weights,
@@ -746,18 +1085,27 @@ class EvolutionRunner:
         if "mutation_steps" in data:
             try:
                 runner.mutation_steps = int(data["mutation_steps"])
-            except Exception:
-                pass
+            except (TypeError, ValueError):
+                console.print("[yellow]Warning:[/] invalid mutation_steps in state; using default.")
         elite_cfg = data.get("structural_elite") or {}
-        try:
-            runner.structural_elite_k = int(elite_cfg.get("k", runner.structural_elite_k))
-            weights = elite_cfg.get("weights")
-            if isinstance(weights, dict):
-                runner.structural_elite_weights.update(
-                    {k: float(v) for k, v in weights.items() if k in runner.structural_elite_weights}
-                )
-        except Exception:
-            pass
+        k_raw = elite_cfg.get("k")
+        if k_raw is not None:
+            try:
+                runner.structural_elite_k = int(k_raw)
+            except (TypeError, ValueError):
+                console.print("[yellow]Warning:[/] invalid structural_elite.k; keeping default.")
+        weights = elite_cfg.get("weights")
+        if isinstance(weights, dict):
+            for key, value in weights.items():
+                if key not in runner.structural_elite_weights:
+                    continue
+                try:
+                    runner.structural_elite_weights[key] = float(value)
+                except (TypeError, ValueError):
+                    console.print(
+                        f"[yellow]Warning:[/] invalid structural_elite weight for {key}; "
+                        "keeping default."
+                    )
         runner.checkpoint_dir = checkpoint_dir
         init_ckpt = data.get("init_checkpoint")
         runner._init_checkpoint = Path(init_ckpt) if init_ckpt else None
@@ -766,11 +1114,34 @@ class EvolutionRunner:
         runner._history = history
         runner._parents = data.get("parents", {})
         # Rebuild frontier entries by id lookup
-        id_to_candidate = {c.ident: c for c in pool}
+        id_to_candidate = {c.ident: c for c in pool + history}
         frontier_ids = data.get("frontier", [])
         runner.frontier._entries = [
             id_to_candidate[cid] for cid in frontier_ids if cid in id_to_candidate
         ]
+        archive_cfg = data.get("archive")
+        if isinstance(archive_cfg, dict):
+            runner.archive = {
+                str(bin_key): id_to_candidate[cid]
+                for bin_key, cid in archive_cfg.items()
+                if cid in id_to_candidate
+            }
+        max_elites = data.get("archive_max_elites")
+        if max_elites is not None:
+            try:
+                runner.archive_max_elites = max(0, int(max_elites))
+            except (TypeError, ValueError):
+                pass
+        mutation_success = data.get("mutation_success")
+        if isinstance(mutation_success, dict):
+            runner._mutation_success = {
+                str(k): float(v) for k, v in mutation_success.items() if isinstance(v, (int, float))
+            }
+        mutation_counts = data.get("mutation_counts")
+        if isinstance(mutation_counts, dict):
+            runner._mutation_counts = {
+                str(k): int(v) for k, v in mutation_counts.items() if isinstance(v, (int, float))
+            }
         # Restore RNG
         rng_state = data.get("rng_state")
         if rng_state:
@@ -792,6 +1163,12 @@ class EvolutionRunner:
         for file_path in (candidate.checkpoint, candidate.seed_state_path):
             if file_path is None:
                 continue
+            if self._init_checkpoint is not None:
+                try:
+                    if Path(file_path).resolve() == self._init_checkpoint.resolve():
+                        continue
+                except OSError:
+                    pass
             try:
                 Path(file_path).unlink(missing_ok=True)
             except OSError:

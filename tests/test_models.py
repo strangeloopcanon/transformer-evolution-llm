@@ -2,8 +2,12 @@ import torch
 
 from transformer_evolution_llm.dsl import (
     ArchitectureSpec,
+    BranchRouterConfig,
+    ChunkMemoryConfig,
     CustomModuleConfig,
     GatedModuleConfig,
+    LayerScaleConfig,
+    MemoryTokensConfig,
     MoEFFNConfig,
     RetroConfig,
     SSMConfig,
@@ -33,8 +37,18 @@ def test_block_with_moe_ssm_and_extras(tiny_spec: ArchitectureSpec) -> None:
     block.ssm = SSMConfig(kind="mamba2", d_state=8, d_conv=3, dt_rank=4, chunk=16, gate=0.1)
     block.extras = [
         RetroConfig(memory_tokens=32, stride=8, aggregator="gate", gating_weight=0.3),
+        MemoryTokensConfig(tokens=8, heads=2, head_dim=32, gating_weight=0.1),
+        ChunkMemoryConfig(chunk_size=8, stride=4, heads=2, head_dim=32, gating_weight=0.1),
         CustomModuleConfig(name="custom", params={"dim": 64}),
         GatedModuleConfig(targets=["attn", "ffn"], init_weight=0.2, learnable=True),
+        LayerScaleConfig(targets=["attn", "ffn", "memory"], init=1e-5, learnable=True),
+        BranchRouterConfig(
+            targets=["attn", "ffn", "ssm", "memory"],
+            router_type="token",
+            hidden=64,
+            dropout=0.0,
+            temperature=1.0,
+        ),
     ]
     model = EvolutionModel(spec.model)
     input_ids = torch.randint(0, spec.model.head.vocab, (1, spec.data.seq_len))

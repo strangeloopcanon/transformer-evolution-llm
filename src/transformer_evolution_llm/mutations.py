@@ -5,12 +5,19 @@ from __future__ import annotations
 import copy
 import random
 from collections.abc import Callable
+from typing import Literal
 
 from .dsl import (
     ArchitectureSpec,
+    AssociativeMemoryConfig,
+    BranchRouterConfig,
+    ChunkMemoryConfig,
     CustomModuleConfig,
     DenseFFNConfig,
     GatedModuleConfig,
+    KVPolicyConfig,
+    LayerScaleConfig,
+    MemoryTokensConfig,
     MoEFFNConfig,
     RecurrenceConfig,
     RetroConfig,
@@ -35,9 +42,12 @@ def dense_to_moe(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec
     if not isinstance(dense, DenseFFNConfig):
         msg = "dense_to_moe expects a dense FFN block."
         raise TypeError(msg)
+    # Start with a modest expert count so MoE is viable under local-resource caps.
+    # Evolution can later scale experts up via tune_experts.
+    n_experts = int(rng.choice([8, 12, 16]))
     block.ffn = MoEFFNConfig(
         hidden=dense.hidden,
-        n_experts=32,
+        n_experts=n_experts,
         k=2,
         balance=0.05,
         shared=1,
@@ -164,6 +174,320 @@ def insert_custom_module(spec: ArchitectureSpec, rng: random.Random) -> Architec
     return child
 
 
+def insert_assoc_memory(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
+    child = clone_spec(spec)
+    block = rng.choice(child.model.blocks)
+    if any(isinstance(extra, AssociativeMemoryConfig) for extra in block.extras):
+        return tune_assoc_memory(child, rng)
+    dim = int(child.model.emb.dim)
+    head_dim = int(rng.choice([16, 32, 64]))
+    heads = int(rng.choice([2, 4, 8]))
+    if heads * head_dim > 2 * dim:
+        heads = max(1, dim // max(1, head_dim))
+    block.extras.append(
+        AssociativeMemoryConfig(
+            heads=max(1, heads),
+            head_dim=head_dim,
+            feature_map="elu",
+            dropout=rng.choice([0.0, 0.0, 0.1]),
+            gating_weight=rng.uniform(0.05, 0.4),
+        )
+    )
+    return child
+
+
+def tune_assoc_memory(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
+    child = clone_spec(spec)
+    candidates: list[AssociativeMemoryConfig] = []
+    for block in child.model.blocks:
+        for extra in block.extras:
+            if isinstance(extra, AssociativeMemoryConfig):
+                candidates.append(extra)
+    if not candidates:
+        return insert_assoc_memory(child, rng)
+    mem = rng.choice(candidates)
+    mem.gating_weight = max(0.0, min(1.0, float(mem.gating_weight + rng.uniform(-0.1, 0.1))))
+    if rng.random() < 0.5:
+        mem.dropout = max(
+            0.0, min(0.5, float(getattr(mem, "dropout", 0.0) + rng.uniform(-0.1, 0.1)))
+        )
+    if rng.random() < 0.4:
+        mem.head_dim = int(rng.choice([16, 32, 64]))
+    if rng.random() < 0.4:
+        mem.heads = int(rng.choice([2, 4, 8]))
+    return child
+
+
+def insert_memory_tokens(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
+    child = clone_spec(spec)
+    block = rng.choice(child.model.blocks)
+    existing = next((e for e in block.extras if isinstance(e, MemoryTokensConfig)), None)
+    if existing is not None:
+        return tune_memory_tokens(child, rng)
+    dim = int(child.model.emb.dim)
+    head_dim = int(rng.choice([16, 32, 64]))
+    heads = int(rng.choice([1, 2, 4, 8]))
+    if heads * head_dim > 2 * dim:
+        heads = max(1, dim // max(1, head_dim))
+    tokens = int(rng.choice([8, 16, 32, 64]))
+    block.extras.append(
+        MemoryTokensConfig(
+            tokens=tokens,
+            heads=max(1, heads),
+            head_dim=head_dim,
+            dropout=rng.choice([0.0, 0.0, 0.1]),
+            init_std=0.02,
+            gating_weight=rng.uniform(0.05, 0.3),
+        )
+    )
+    return child
+
+
+def tune_memory_tokens(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
+    child = clone_spec(spec)
+    candidates: list[MemoryTokensConfig] = []
+    for block in child.model.blocks:
+        for extra in block.extras:
+            if isinstance(extra, MemoryTokensConfig):
+                candidates.append(extra)
+    if not candidates:
+        return insert_memory_tokens(child, rng)
+    mem = rng.choice(candidates)
+    mem.gating_weight = max(0.0, min(1.0, float(mem.gating_weight + rng.uniform(-0.1, 0.1))))
+    mem.dropout = max(0.0, min(0.5, float(getattr(mem, "dropout", 0.0) + rng.uniform(-0.1, 0.1))))
+    if rng.random() < 0.4:
+        mem.tokens = int(rng.choice([4, 8, 16, 32, 64, 128]))
+    if rng.random() < 0.3:
+        mem.head_dim = int(rng.choice([16, 32, 64]))
+    if rng.random() < 0.3:
+        mem.heads = int(rng.choice([1, 2, 4, 8]))
+    return child
+
+
+def insert_chunk_memory(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
+    child = clone_spec(spec)
+    block = rng.choice(child.model.blocks)
+    if any(isinstance(extra, ChunkMemoryConfig) for extra in block.extras):
+        return tune_chunk_memory(child, rng)
+    dim = int(child.model.emb.dim)
+    seq_len = int(child.data.seq_len)
+    chunk_size = int(rng.choice([32, 64, 96, 128, 192, 256]))
+    chunk_size = max(8, min(chunk_size, seq_len))
+    stride = int(rng.choice([chunk_size, max(1, chunk_size // 2)]))
+    head_dim = int(rng.choice([16, 32, 64]))
+    heads = int(rng.choice([1, 2, 4, 8]))
+    if heads * head_dim > 2 * dim:
+        heads = max(1, dim // max(1, head_dim))
+    block.extras.append(
+        ChunkMemoryConfig(
+            chunk_size=chunk_size,
+            stride=stride,
+            heads=max(1, heads),
+            head_dim=head_dim,
+            dropout=rng.choice([0.0, 0.0, 0.1]),
+            gating_weight=rng.uniform(0.05, 0.3),
+        )
+    )
+    return child
+
+
+def tune_chunk_memory(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
+    child = clone_spec(spec)
+    candidates: list[ChunkMemoryConfig] = []
+    for block in child.model.blocks:
+        for extra in block.extras:
+            if isinstance(extra, ChunkMemoryConfig):
+                candidates.append(extra)
+    if not candidates:
+        return insert_chunk_memory(child, rng)
+    mem = rng.choice(candidates)
+    seq_len = int(child.data.seq_len)
+    if rng.random() < 0.5:
+        chunk_size = int(rng.choice([16, 32, 64, 96, 128, 192, 256]))
+        mem.chunk_size = max(8, min(chunk_size, seq_len))
+    if rng.random() < 0.5:
+        stride = int(rng.choice([mem.chunk_size, max(1, int(mem.chunk_size // 2))]))
+        mem.stride = max(1, min(stride, seq_len))
+    mem.gating_weight = max(0.0, min(1.0, float(mem.gating_weight + rng.uniform(-0.1, 0.1))))
+    mem.dropout = max(0.0, min(0.5, float(getattr(mem, "dropout", 0.0) + rng.uniform(-0.1, 0.1))))
+    if rng.random() < 0.3:
+        mem.head_dim = int(rng.choice([16, 32, 64]))
+    if rng.random() < 0.3:
+        mem.heads = int(rng.choice([1, 2, 4, 8]))
+    return child
+
+
+def toggle_branch_router(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
+    child = clone_spec(spec)
+    block = rng.choice(child.model.blocks)
+    existing = [extra for extra in block.extras if isinstance(extra, BranchRouterConfig)]
+    if existing:
+        block.extras = [
+            extra for extra in block.extras if not isinstance(extra, BranchRouterConfig)
+        ]
+        return child
+    targets = ["attn", "ffn", "ssm", "memory"]
+    rng.shuffle(targets)
+    block.extras.append(
+        BranchRouterConfig(
+            targets=targets,
+            router_type=rng.choice(["token", "sequence"]),
+            hidden=rng.choice([None, 64, 128, 256]),
+            dropout=rng.choice([0.0, 0.0, 0.1]),
+            temperature=rng.uniform(0.7, 1.5),
+        )
+    )
+    return child
+
+
+def tune_branch_router(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
+    child = clone_spec(spec)
+    routers: list[BranchRouterConfig] = []
+    for block in child.model.blocks:
+        for extra in block.extras:
+            if isinstance(extra, BranchRouterConfig):
+                routers.append(extra)
+    if not routers:
+        return toggle_branch_router(child, rng)
+    router = rng.choice(routers)
+    router.temperature = max(0.1, min(5.0, float(router.temperature) * rng.uniform(0.8, 1.25)))
+    router.dropout = max(
+        0.0, min(0.5, float(getattr(router, "dropout", 0.0) + rng.uniform(-0.1, 0.1)))
+    )
+    router.router_type = rng.choice(["token", "sequence"])
+    if rng.random() < 0.4:
+        router.hidden = rng.choice([None, 32, 64, 128, 256])
+    if rng.random() < 0.3:
+        targets = list(router.targets or ["attn", "ffn", "ssm", "memory"])
+        if rng.random() < 0.5 and "memory" in targets:
+            targets.remove("memory")
+        elif "memory" not in targets:
+            targets.append("memory")
+        if targets:
+            router.targets = targets
+    return child
+
+
+def insert_layer_scale(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
+    child = clone_spec(spec)
+    block = rng.choice(child.model.blocks)
+    if any(isinstance(extra, LayerScaleConfig) for extra in block.extras):
+        return tune_layer_scale(child, rng)
+    targets = rng.sample(["attn", "ffn", "ssm", "memory"], k=rng.choice([1, 2, 3]))
+    init = rng.choice([1e-6, 1e-5, 1e-4, 1e-3])
+    block.extras.append(LayerScaleConfig(targets=targets, init=float(init), learnable=True))
+    return child
+
+
+def tune_layer_scale(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
+    child = clone_spec(spec)
+    layerscales: list[LayerScaleConfig] = []
+    for block in child.model.blocks:
+        for extra in block.extras:
+            if isinstance(extra, LayerScaleConfig):
+                layerscales.append(extra)
+    if not layerscales:
+        return insert_layer_scale(child, rng)
+    ls = rng.choice(layerscales)
+    ls.init = float(max(1e-8, min(0.5, float(ls.init) * rng.uniform(0.5, 2.0))))
+    if rng.random() < 0.3:
+        ls.learnable = rng.choice([True, False])
+    if rng.random() < 0.3:
+        targets = list(ls.targets)
+        candidate = rng.choice(["attn", "ffn", "ssm", "memory"])
+        if candidate in targets and len(targets) > 1:
+            targets.remove(candidate)
+        elif candidate not in targets:
+            targets.append(candidate)
+        ls.targets = targets
+    return child
+
+
+def toggle_alibi(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
+    child = clone_spec(spec)
+    blocks = [
+        b
+        for b in child.model.blocks
+        if b.attn is not None and str(getattr(b.attn, "kind", "MHA") or "MHA").upper() != "LINEAR"
+    ]
+    if not blocks:
+        return child
+    block = rng.choice(blocks)
+    if block.attn is None:
+        return child
+    block.attn.alibi = not bool(getattr(block.attn, "alibi", False))
+    return child
+
+
+def toggle_linear_attention(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
+    child = clone_spec(spec)
+    blocks = [b for b in child.model.blocks if b.attn is not None]
+    if not blocks:
+        return child
+    block = rng.choice(blocks)
+    if block.attn is None:
+        return child
+    kind = str(getattr(block.attn, "kind", "MHA") or "MHA").upper()
+    if kind == "LINEAR":
+        block.attn.kind = rng.choice(["MHA", "GQA", "MQA"])
+        if block.attn.kind == "MQA":
+            block.attn.kv_groups = int(block.attn.heads)
+        elif block.attn.kind == "GQA":
+            block.attn.kv_groups = max(1, int(block.attn.heads) // 4)
+        else:
+            block.attn.kv_groups = 1
+        return child
+
+    block.attn.kind = "LINEAR"
+    block.attn.causal = True
+    block.attn.alibi = False
+    block.attn.sparsity = "none"
+    block.attn.sw = None
+    block.attn.block_size = None
+    block.attn.block_stride = None
+    block.attn.global_stride = None
+    block.attn.dilation = None
+    block.attn.selector = "none"
+    block.attn.selector_topk = None
+    block.attn.selector_heads = None
+    block.attn.selector_dim = None
+    block.attn.selector_rope = "none"
+    block.attn.selector_detach = False
+    return child
+
+
+def toggle_mla_attention(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
+    child = clone_spec(spec)
+    blocks = [
+        b
+        for b in child.model.blocks
+        if b.attn is not None and str(getattr(b.attn, "kind", "MHA") or "MHA").upper() != "LINEAR"
+    ]
+    if not blocks:
+        return child
+    block = rng.choice(blocks)
+    if block.attn is None:
+        return child
+    kind = str(getattr(block.attn, "kind", "MHA") or "MHA").upper()
+    if kind == "MLA":
+        block.attn.kind = rng.choice(["MHA", "GQA", "MQA"])
+        block.attn.kv_latent_dim = None
+        if block.attn.kind == "MQA":
+            block.attn.kv_groups = int(block.attn.heads)
+        elif block.attn.kind == "GQA":
+            block.attn.kv_groups = max(1, int(block.attn.heads) // 4)
+        else:
+            block.attn.kv_groups = 1
+        return child
+
+    block.attn.kind = "MLA"
+    kv_groups = max(1, int(block.attn.kv_groups or 1))
+    kv_heads = max(1, int(block.attn.heads) // kv_groups)
+    full = max(1, kv_heads * int(block.attn.head_dim))
+    block.attn.kv_latent_dim = int(rng.choice([max(1, full // 4), max(1, full // 2), full]))
+    return child
+
+
 def toggle_gated_mix(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
     child = clone_spec(spec)
     block = rng.choice(child.model.blocks)
@@ -202,17 +526,90 @@ def tune_kv(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
     if b.attn is None:
         return child
     heads = max(1, int(b.attn.heads))
-    choices = [k for k in [1, 2, 4, 8] if k <= heads]
+    choices = [k for k in [1, 2, 4, 8] if k <= heads and heads % k == 0]
     if not choices:
         return child
     b.attn.kv_groups = int(rng.choice(choices))
     return child
 
 
+def toggle_kv_policy(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
+    """Toggle an inference KV policy (cache mode + quantization).
+
+    This does not change training compute directly (training is full-sequence),
+    but it changes the static KV-memory proxy used for gating/selection.
+    """
+
+    child = clone_spec(spec)
+    policy = getattr(child.model, "kv_policy", None)
+    if policy is None and rng.random() < 0.9:
+        child.model.kv_policy = KVPolicyConfig(
+            cache="window",
+            window=int(rng.choice([1024, 2048, 4096, 8192])),
+            quant=rng.choice(["none", "nf4", "fp8", "int8"]),
+        )
+        return child
+    if policy is None:
+        child.model.kv_policy = KVPolicyConfig(cache="full", quant=rng.choice(["none", "fp8"]))
+        return child
+
+    # Occasionally clear the policy entirely.
+    if rng.random() < 0.25:
+        child.model.kv_policy = None
+        return child
+
+    cache = rng.choice(["full", "window", "ring", "none", "latent"])
+    quant = rng.choice(["none", "nf4", "fp8", "int8"])
+    if cache in {"window", "ring"}:
+        child.model.kv_policy = KVPolicyConfig(
+            cache=cache,
+            window=int(rng.choice([512, 1024, 2048, 4096, 8192, 16384])),
+            quant=quant,
+        )
+        return child
+    if cache == "latent":
+        child.model.kv_policy = KVPolicyConfig(
+            cache="latent",
+            latent_dim=int(rng.choice([64, 96, 128, 192, 256, 384, 512])),
+            quant=quant,
+        )
+        return child
+    child.model.kv_policy = KVPolicyConfig(cache=cache, quant=quant)
+    return child
+
+
+def tune_kv_policy(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
+    """Jitter KV policy knobs (window size, quant type, latent dim)."""
+
+    child = clone_spec(spec)
+    policy = getattr(child.model, "kv_policy", None)
+    if policy is None:
+        return toggle_kv_policy(child, rng)
+
+    cache = str(getattr(policy, "cache", "full") or "full")
+    if cache in {"window", "ring"}:
+        current = int(getattr(policy, "window", 4096) or 4096)
+        mult = rng.choice([0.5, 0.75, 1.0, 1.25, 1.5])
+        policy.window = max(256, min(32768, int(current * mult)))
+    elif cache == "latent":
+        current = int(getattr(policy, "latent_dim", 256) or 256)
+        delta = rng.choice([-64, -32, 0, 32, 64, 128])
+        policy.latent_dim = max(32, min(2048, int(current + delta)))
+
+    if rng.random() < 0.6:
+        policy.quant = rng.choice(["none", "nf4", "fp8", "int8"])
+    child.model.kv_policy = policy
+    return child
+
+
 def toggle_selector(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
     """Flip selector-based sparsity on an attention block and retune its knobs."""
     child = clone_spec(spec)
-    blocks = [b for b in child.model.blocks if b.attn is not None]
+    blocks = [
+        b
+        for b in child.model.blocks
+        if b.attn is not None and str(getattr(b.attn, "kind", "MHA") or "MHA").upper() != "LINEAR"
+    ]
     if not blocks:
         return child
     b = rng.choice(blocks)
@@ -243,12 +640,24 @@ def tune_rope(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
     b = rng.choice(blocks)
     if b.attn is None:
         return child
-    # Ensure rope is enabled; jitter rope_theta
-    if b.attn.rope is None:
-        b.attn.rope = "yarn"
+    if rng.random() < 0.1:
+        b.attn.rope = None
+        b.attn.rope_theta = None
+        b.attn.rope_factor = None
+        return child
+
+    b.attn.rope = rng.choice(["standard", "linear", "ntk", "yarn"])
     base = float(b.attn.rope_theta or 10000.0)
     jitter = rng.uniform(0.5, 2.0)
     b.attn.rope_theta = max(1000.0, min(200000.0, base * jitter))
+    if str(b.attn.rope or "").lower() in {"linear", "ntk", "yarn"}:
+        current = float(getattr(b.attn, "rope_factor", None) or 1.0)
+        if current <= 0.0:
+            current = 1.0
+        factor = current * rng.uniform(0.8, 1.25)
+        b.attn.rope_factor = max(1.0, min(16.0, factor))
+    else:
+        b.attn.rope_factor = None
     return child
 
 
@@ -340,7 +749,7 @@ def tune_attn_shape(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureS
     attn.heads = heads
     attn.head_dim = head_dim
     # kv_groups in [1, heads] preferring divisors
-    kv_candidates = [k for k in [1, 2, 4, 8, heads] if k <= heads]
+    kv_candidates = [k for k in [1, 2, 4, 8, heads] if k <= heads and heads % k == 0]
     attn.kv_groups = int(rng.choice(kv_candidates))
     return child
 
@@ -348,14 +757,18 @@ def tune_attn_shape(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureS
 def tune_attn_sparsity(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
     """Explore sparsity/window settings (local/global strides)."""
     child = clone_spec(spec)
-    blocks = [b for b in child.model.blocks if b.attn is not None]
+    blocks = [
+        b
+        for b in child.model.blocks
+        if b.attn is not None and str(getattr(b.attn, "kind", "MHA") or "MHA").upper() != "LINEAR"
+    ]
     if not blocks:
         return child
     b = rng.choice(blocks)
     attn = b.attn
     if attn is None:
         return child
-    sparsity_opts = ["none", "local_global"]
+    sparsity_opts: list[Literal["none", "local_global"]] = ["none", "local_global"]
     attn.sparsity = rng.choice(sparsity_opts)
     if attn.sparsity == "local_global":
         attn.sw = rng.choice([64, 96, 128, 192, 256])
@@ -374,15 +787,14 @@ def tune_ffn_width_activation(spec: ArchitectureSpec, rng: random.Random) -> Arc
     block = rng.choice(child.model.blocks)
     if block.ffn is None:
         return child
-    # Only adjust dense FFNs
-    if getattr(block.ffn, "type", "dense") != "dense":
+    if not isinstance(block.ffn, DenseFFNConfig):
         return child
-    hidden = getattr(block.ffn, "hidden", None)
-    if hidden:
+    hidden = int(block.ffn.hidden)
+    if hidden > 0:
         scale = rng.uniform(0.75, 1.5)
         new_hidden = max(256, min(int(hidden * scale), 8192))
-        block.ffn.hidden = new_hidden  # type: ignore[attr-defined]
-    block.ffn.activation = rng.choice(["swiglu", "gelu", "silu", "relu"])  # type: ignore[attr-defined]
+        block.ffn.hidden = new_hidden
+    block.ffn.activation = rng.choice(["swiglu", "gelu", "silu", "relu"])
     return child
 
 
@@ -395,9 +807,9 @@ def tune_router_coeffs(spec: ArchitectureSpec, rng: random.Random) -> Architectu
     block = rng.choice(moe_blocks)
     if not isinstance(block.ffn, MoEFFNConfig):
         return child
-    block.ffn.router_temperature = rng.choice([None, rng.uniform(0.3, 2.0)])  # type: ignore[attr-defined]
-    block.ffn.router_lb_weight = rng.choice([None, rng.uniform(0.0, 0.1)])  # type: ignore[attr-defined]
-    block.ffn.router_aux_weight = rng.choice([None, rng.uniform(0.0, 0.1)])  # type: ignore[attr-defined]
+    block.ffn.router_temperature = rng.choice([None, rng.uniform(0.3, 2.0)])
+    block.ffn.router_lb_weight = rng.choice([None, rng.uniform(0.0, 0.1)])
+    block.ffn.router_aux_weight = rng.choice([None, rng.uniform(0.0, 0.1)])
     return child
 
 
@@ -422,10 +834,10 @@ def tune_retro(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec:
         )
         block.extras.append(retro)
     else:
-        retro.memory_tokens = int(rng.choice([256, 512, 768, 1024]))  # type: ignore[attr-defined]
-        retro.stride = int(rng.choice([16, 32, 64, 128]))  # type: ignore[attr-defined]
-        retro.aggregator = rng.choice(["mean", "attention", "gate"])  # type: ignore[attr-defined]
-        retro.gating_weight = rng.uniform(0.1, 0.5)  # type: ignore[attr-defined]
+        retro.memory_tokens = int(rng.choice([256, 512, 768, 1024]))
+        retro.stride = int(rng.choice([16, 32, 64, 128]))
+        retro.aggregator = rng.choice(["mean", "attention", "gate"])
+        retro.gating_weight = rng.uniform(0.1, 0.5)
     return child
 
 
@@ -533,9 +945,24 @@ def graph_jitter(spec: ArchitectureSpec, rng: random.Random) -> ArchitectureSpec
         "toggle_ssm",
         "insert_retro_module",
         "insert_custom_module",
+        "insert_assoc_memory",
+        "tune_assoc_memory",
+        "insert_memory_tokens",
+        "tune_memory_tokens",
+        "insert_chunk_memory",
+        "tune_chunk_memory",
+        "toggle_branch_router",
+        "tune_branch_router",
+        "insert_layer_scale",
+        "tune_layer_scale",
         "toggle_gated_mix",
+        "toggle_alibi",
+        "toggle_linear_attention",
+        "toggle_mla_attention",
         "tune_attn_gating",
         "tune_kv",
+        "toggle_kv_policy",
+        "tune_kv_policy",
         "tune_rope",
         "dense_to_moe",
         "mutate_topk",
@@ -565,9 +992,24 @@ REGISTRY: dict[str, MutationFn] = {
     "toggle_precision": toggle_precision,
     "insert_retro_module": insert_retro_module,
     "insert_custom_module": insert_custom_module,
+    "insert_assoc_memory": insert_assoc_memory,
+    "tune_assoc_memory": tune_assoc_memory,
+    "insert_memory_tokens": insert_memory_tokens,
+    "tune_memory_tokens": tune_memory_tokens,
+    "insert_chunk_memory": insert_chunk_memory,
+    "tune_chunk_memory": tune_chunk_memory,
+    "toggle_branch_router": toggle_branch_router,
+    "tune_branch_router": tune_branch_router,
+    "insert_layer_scale": insert_layer_scale,
+    "tune_layer_scale": tune_layer_scale,
     "toggle_gated_mix": toggle_gated_mix,
     "toggle_ssm": toggle_ssm,
+    "toggle_alibi": toggle_alibi,
+    "toggle_linear_attention": toggle_linear_attention,
+    "toggle_mla_attention": toggle_mla_attention,
     "tune_kv": tune_kv,
+    "toggle_kv_policy": toggle_kv_policy,
+    "tune_kv_policy": tune_kv_policy,
     "toggle_selector": toggle_selector,
     "tune_rope": tune_rope,
     "tune_attn_shape": tune_attn_shape,

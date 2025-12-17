@@ -426,7 +426,7 @@ data:
     weight: 0.35
     cache_path: null
     revision: null
-  - name: codeparrot/github-code-clean
+  - name: mbpp
     split: train
     weight: 0.4
     cache_path: null

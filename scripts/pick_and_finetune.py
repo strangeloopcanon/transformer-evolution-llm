@@ -66,8 +66,9 @@ def main(
         if not ckpt.exists():
             typer.echo(f"[warn] missing checkpoint for {cid}; skipping")
             continue
-        data_module = DataModule(spec.data)
-        max_tokens = spec.train.max_tokens or trainer.steps * spec.data.seq_len
+        data_module = DataModule(spec.data, seed=int(getattr(spec.train, "seed", 0) or 0))
+        tokens_per_batch = int(spec.data.batch_size) * int(spec.data.seq_len)
+        max_tokens = spec.train.max_tokens or (trainer.steps * tokens_per_batch)
         max_tokens = int(max_tokens * token_multiplier)
         batches = data_module.batches(max_tokens=max_tokens)
         candidate = Candidate(ident=f"{cid}__long", spec=spec)

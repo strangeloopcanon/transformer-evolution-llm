@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -11,7 +12,7 @@ import typer
 
 from transformer_evolution_llm.api import load_spec
 from transformer_evolution_llm.data import DataModule
-from transformer_evolution_llm.orchestrator import EvolutionRunner
+from transformer_evolution_llm.orchestrator import EvolutionRunner, default_objectives
 from transformer_evolution_llm.trainer import FullWeightTrainer
 
 app = typer.Typer(help="Launch live (full-weight) evolutionary runs with custom trainer settings.")
@@ -53,6 +54,41 @@ def _detect_attention_impl(device: str) -> str:
     return "vanilla_mha"
 
 
+def _prune_checkpoints_to_frontier(frontier: Path, checkpoint_dir: Path) -> None:
+    """Delete checkpoint files not referenced by the frontier JSON.
+
+    Keeps only the checkpoint paths present in the saved frontier entries.
+    """
+    try:
+        entries = json.loads(frontier.read_text())
+    except Exception:
+        return
+    if not isinstance(entries, list):
+        return
+    keep: set[Path] = set()
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        ckpt = entry.get("checkpoint")
+        if not ckpt:
+            continue
+        try:
+            keep.add(Path(str(ckpt)).resolve())
+        except Exception:
+            continue
+    removed = 0
+    for path in checkpoint_dir.glob("*.pt"):
+        if path.resolve() in keep:
+            continue
+        try:
+            path.unlink(missing_ok=True)
+            removed += 1
+        except OSError:
+            continue
+    if removed:
+        typer.echo(f"Pruned {removed} non-frontier checkpoints from {checkpoint_dir}")
+
+
 @app.command()
 def main(
     config: Path = typer.Argument(..., exists=True, readable=True, help="YAML/JSON DSL config"),
@@ -68,6 +104,10 @@ def main(
     cleanup_old_checkpoints: bool = typer.Option(
         True,
         help="After the run, delete other checkpoint directories (names starting with 'checkpoints') in the same parent folder.",
+    ),
+    prune_checkpoints_to_frontier: bool = typer.Option(
+        False,
+        help="After the run, keep only frontier checkpoint files inside checkpoint_dir.",
     ),
     lineage_out: Path | None = typer.Option(
         None,
@@ -90,18 +130,23 @@ def main(
         min=1,
         help="Number of mutations to apply per child (chained sequentially).",
     ),
-    parent_selection: str = typer.Option(
-        "weighted",
-        help="Parent selection strategy: weighted | pareto_uniform | lexicase",
+    parent_selection: str | None = typer.Option(
+        None,
+        help="Parent selection strategy (overrides config if set): weighted | pareto_uniform | lexicase | map_elites",
     ),
     score_weight_prior: float = typer.Option(
         0.0, help="Weight for prior_distance (minimize). 0 disables its effect."
     ),
 ) -> None:
     """Run an evolutionary sweep with the live trainer."""
+    # Avoid tokenizers forking warnings when we later call subprocess (e.g., git).
+    os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+    commit = _git_commit()
     if resume_from:
         runner = EvolutionRunner.load_state(resume_from, mode="live")
         spec = runner.base_spec
+        # Resume implies deterministic continuation; ignore CLI seed.
+        seed = seed  # keep for manifest only
     else:
         spec = load_spec(config)
         runner = EvolutionRunner(
@@ -111,20 +156,60 @@ def main(
             seed=seed,
             score_weight_overrides=None,
         )
-    score_weights = {
-        "ppl_code": score_weight_ppl,
-        "ppl_math": score_weight_ppl,
-        "throughput": score_weight_throughput,
-        "long_recall": score_weight_long_recall,
-        "ram": score_weight_ram,
-        "layers": score_weight_layers,
-        "moe_blocks": score_weight_moe,
-        "novelty": score_weight_novelty,
-        "instability": score_weight_instability,
+    # Only override runner.score_weights when the user explicitly changes one of
+    # the weights from its default. This keeps configs that define custom
+    # objectives (e.g., passkey_loss) working out of the box.
+    defaults = {
+        "ppl": 1.0,
+        "throughput": 1.0,
+        "long_recall": 1.0,
+        "ram": 1.0,
+        "layers": 1.0,
+        "moe_blocks": 1.0,
+        "novelty": 1.0,
+        "instability": 1.0,
+        "prior_distance": 0.0,
     }
-    if score_weight_prior != 0.0:
-        score_weights["prior_distance"] = score_weight_prior
-    runner.score_weights = score_weights
+    override_requested = any(
+        abs(val - defaults[key]) > 1e-12
+        for key, val in (
+            ("ppl", score_weight_ppl),
+            ("throughput", score_weight_throughput),
+            ("long_recall", score_weight_long_recall),
+            ("ram", score_weight_ram),
+            ("layers", score_weight_layers),
+            ("moe_blocks", score_weight_moe),
+            ("novelty", score_weight_novelty),
+            ("instability", score_weight_instability),
+            ("prior_distance", score_weight_prior),
+        )
+    )
+    if override_requested:
+        direction_fallback = dict(default_objectives())
+        direction_fallback["prior_distance"] = "min"
+
+        def _signed(metric: str, weight: float) -> float:
+            direction = runner.objective_dir.get(metric) or direction_fallback.get(metric, "max")
+            sign = 1.0 if direction == "max" else -1.0
+            return sign * float(weight)
+
+        score_weights = dict(runner.score_weights)
+        score_weights.update(
+            {
+                "ppl_code": _signed("ppl_code", score_weight_ppl),
+                "ppl_math": _signed("ppl_math", score_weight_ppl),
+                "throughput": _signed("throughput", score_weight_throughput),
+                "long_recall": _signed("long_recall", score_weight_long_recall),
+                "ram": _signed("ram", score_weight_ram),
+                "layers": _signed("layers", score_weight_layers),
+                "moe_blocks": _signed("moe_blocks", score_weight_moe),
+                "novelty": _signed("novelty", score_weight_novelty),
+                "instability": _signed("instability", score_weight_instability),
+            }
+        )
+        if score_weight_prior != 0.0:
+            score_weights["prior_distance"] = _signed("prior_distance", score_weight_prior)
+        runner.score_weights = score_weights
     # Optional mutation mix override: list of "name=weight"
     if mutation_weight:
         weights: dict[str, float] = {}
@@ -140,10 +225,8 @@ def main(
             runner.mutation_weights = weights
     runner.mutation_steps = mutation_steps
     # Override selection strategy from CLI if provided
-    try:
-        runner.cfg.parent_selection = parent_selection  # type: ignore[attr-defined]
-    except Exception:
-        pass
+    if parent_selection is not None:
+        runner.cfg.parent_selection = parent_selection
     train_cfg = spec.train
     runner.trainer = FullWeightTrainer(
         steps=steps,
@@ -156,7 +239,7 @@ def main(
         no_improve_patience=train_cfg.no_improve_patience,
         improvement_tolerance=train_cfg.improvement_tolerance,
     )
-    runner.data_module = DataModule(spec.data)
+    runner.data_module = DataModule(spec.data, seed=int(getattr(spec.train, "seed", 0) or 0))
     # Log device/capabilities (best effort)
     try:
         import torch
@@ -210,11 +293,12 @@ def main(
         "frontier": str(out.resolve()),
         "lineage": str(lineage_out.resolve()),
     }
-    commit = _git_commit()
     if commit:
         manifest["git_commit"] = commit
     manifest_path.write_text(json.dumps(manifest, indent=2))
     typer.echo(f"Frontier written to {out}")
+    if prune_checkpoints_to_frontier:
+        _prune_checkpoints_to_frontier(out, checkpoint_dir)
     if cleanup_old_checkpoints:
         _cleanup_old_checkpoint_roots(checkpoint_dir)
 

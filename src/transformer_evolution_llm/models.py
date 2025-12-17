@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import math
 from collections.abc import Callable
 from typing import cast
@@ -11,10 +12,15 @@ from torch import Tensor, nn
 from torch.nn import functional as F  # noqa: N812
 
 from .dsl import (
+    AssociativeMemoryConfig,
     AttentionConfig,
     BlockConfig,
+    BranchRouterConfig,
+    ChunkMemoryConfig,
     CustomModuleConfig,
     GatedModuleConfig,
+    LayerScaleConfig,
+    MemoryTokensConfig,
     ModelConfig,
     MoECustomExpertConfig,
     MoEDenseExpertConfig,
@@ -45,16 +51,34 @@ class RotaryPositionalEncoding(nn.Module):
 
     inv_freq: Tensor
 
-    def __init__(self, dim: int, base: float = 10000.0):
+    def __init__(
+        self,
+        dim: int,
+        base: float = 10000.0,
+        *,
+        rope_type: str = "standard",
+        scale_factor: float = 1.0,
+    ):
         super().__init__()
-        inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2).float() / dim))
+        self.dim = dim
+        self.base = float(base)
+        self.rope_type = (rope_type or "standard").lower()
+        self.scale_factor = float(scale_factor or 1.0)
+
+        effective_base = self.base
+        if self.rope_type in {"ntk", "yarn"} and self.scale_factor != 1.0:
+            denom = max(1.0, float(dim - 2))
+            exponent = float(dim) / denom
+            effective_base = effective_base * (self.scale_factor**exponent)
+
+        inv_freq = 1.0 / (effective_base ** (torch.arange(0, dim, 2).float() / dim))
         self.register_buffer("inv_freq", inv_freq)
         self.inv_freq = cast(Tensor, self.inv_freq)
-        self.dim = dim
-        self.base = base
 
     def forward(self, seq_len: int, device: torch.device) -> Tensor:
-        t = torch.arange(seq_len, device=device).type_as(self.inv_freq)
+        t = torch.arange(seq_len, device=device, dtype=self.inv_freq.dtype)
+        if self.rope_type in {"linear", "yarn"} and self.scale_factor != 1.0:
+            t = t / self.scale_factor
         freqs = torch.einsum("i,j->ij", t, self.inv_freq)
         emb = torch.cat((freqs, freqs), dim=-1)
         return emb
@@ -85,17 +109,32 @@ class MultiHeadSelfAttention(nn.Module):
     def __init__(self, cfg: AttentionConfig, dim: int):
         super().__init__()
         self.cfg = cfg
+        self.kind = str(getattr(cfg, "kind", "MHA") or "MHA").upper()
         self.heads = cfg.heads
         self.head_dim = cfg.head_dim
         self.kv_groups = cfg.kv_groups or 1
         self.n_kv_heads = max(1, self.heads // self.kv_groups)
+        self.dropout_p = float(getattr(cfg, "dropout", 0.0) or 0.0)
 
-        self.c_attn = nn.Linear(dim, (self.heads + 2 * self.n_kv_heads) * self.head_dim, bias=True)
-        self.c_proj = nn.Linear(self.heads * self.head_dim, dim, bias=True)
+        if self.kind == "MLA":
+            latent_dim = int(getattr(cfg, "kv_latent_dim", 0) or 0)
+            if latent_dim <= 0:
+                latent_dim = int(self.n_kv_heads * self.head_dim)
+            self.q_proj = nn.Linear(dim, self.heads * self.head_dim, bias=True)
+            self.kv_down = nn.Linear(dim, latent_dim, bias=True)
+            self.kv_up = nn.Linear(latent_dim, 2 * self.n_kv_heads * self.head_dim, bias=True)
+            self.c_proj = nn.Linear(self.heads * self.head_dim, dim, bias=True)
+        else:
+            self.c_attn = nn.Linear(
+                dim,
+                (self.heads + 2 * self.n_kv_heads) * self.head_dim,
+                bias=True,
+            )
+            self.c_proj = nn.Linear(self.heads * self.head_dim, dim, bias=True)
 
         self.gating_pos = getattr(cfg, "gating_pos", "none")
         self.gating_op = getattr(cfg, "gating_op", "dense")
-        # Selector-based sparsity (stubbed to dense fallback by default)
+        # Selector-based sparsity (content-dependent top-k)
         self.selector_mode = getattr(cfg, "selector", "none") or "none"
         self.selector_topk = getattr(cfg, "selector_topk", None)
         self.selector_heads = getattr(cfg, "selector_heads", None)
@@ -118,12 +157,64 @@ class MultiHeadSelfAttention(nn.Module):
 
             self.gate_bias = nn.Parameter(torch.zeros(self.heads, self.head_dim))
 
-        self.rope = (
-            RotaryPositionalEncoding(cfg.head_dim, float(cfg.rope_theta or 10000.0))
-            if cfg.rope
-            else None
-        )
+        self.rope: RotaryPositionalEncoding | None
+        rope_mode = str(getattr(cfg, "rope", "") or "").lower()
+        if rope_mode and rope_mode not in {"none", "off", "false", "0"}:
+            self.rope = RotaryPositionalEncoding(
+                cfg.head_dim,
+                float(cfg.rope_theta or 10000.0),
+                rope_type=rope_mode,
+                scale_factor=float(getattr(cfg, "rope_factor", None) or 1.0),
+            )
+        else:
+            self.rope = None
         self._impl_logged = False
+
+    def _build_selector_mask(self, q: Tensor, k: Tensor, *, causal: bool) -> Tensor:
+        """Return a float mask (0 / -inf) for selector sparsity.
+
+        q, k are expected in (B, H, T, D) layout.
+        """
+        b, h, t, d = q.shape
+        topk_raw = int(self.selector_topk or 0)
+        keep = max(1, min(topk_raw if topk_raw > 0 else 64, t))
+        sel_dim_raw = int(self.selector_dim or 0)
+        sel_dim = max(1, min(sel_dim_raw if sel_dim_raw > 0 else d, d))
+        h_sel_raw = int(self.selector_heads or 0)
+        h_sel = max(1, min(h_sel_raw if h_sel_raw > 0 else 1, h))
+
+        q_sel = q[:, :h_sel, :, :sel_dim].to(dtype=torch.float32)
+        k_sel = k[:, :h_sel, :, :sel_dim].to(dtype=torch.float32)
+
+        ctx: contextlib.AbstractContextManager[None]
+        ctx = torch.no_grad() if self.selector_detach else contextlib.nullcontext()
+        with ctx:
+            scores = torch.matmul(q_sel, k_sel.transpose(-1, -2)) / math.sqrt(max(1, sel_dim))
+            if causal:
+                future = torch.triu(
+                    torch.ones(t, t, device=scores.device, dtype=torch.bool), diagonal=1
+                )
+                scores = scores.masked_fill(future, float("-inf"))
+
+            indices = scores.topk(k=keep, dim=-1).indices  # (B, H_sel, T, K)
+            selected = torch.zeros((b, h_sel, t, t), device=scores.device, dtype=torch.bool)
+            selected.scatter_(
+                dim=-1,
+                index=indices,
+                src=torch.ones_like(indices, dtype=torch.bool),
+            )
+            diag = torch.arange(t, device=scores.device)
+            selected[:, :, diag, diag] = True
+            if causal:
+                causal_allowed = torch.tril(
+                    torch.ones(t, t, device=scores.device, dtype=torch.bool)
+                )
+                selected = selected & causal_allowed
+
+            if h_sel < h:
+                selected = selected.any(dim=1, keepdim=True)
+            attn_mask = torch.where(selected, 0.0, float("-inf")).to(dtype=torch.float32)
+            return cast(Tensor, attn_mask)
 
     def forward(self, x: Tensor) -> Tensor:
         # Optional input norm clamp to stabilize Q/K magnitudes
@@ -135,96 +226,164 @@ class MultiHeadSelfAttention(nn.Module):
             x = x * scale
 
         b, t, d = x.shape
-        qkv = self.c_attn(x)
-        # Split Q, K, V
-        # q: (b, t, heads, head_dim)
-        # k, v: (b, t, kv_heads, head_dim)
-        q_size = self.heads * self.head_dim
-        kv_size = self.n_kv_heads * self.head_dim
-        q, k, v = torch.split(qkv, [q_size, kv_size, kv_size], dim=-1)
+        if self.kind == "MLA":
+            q = self.q_proj(x)
+            kv_latent = self.kv_down(x)
+            kv = self.kv_up(kv_latent)
+            q = q.view(b, t, self.heads, self.head_dim)
+            kv_size = self.n_kv_heads * self.head_dim
+            k_raw, v_raw = torch.split(kv, [kv_size, kv_size], dim=-1)
+            k = k_raw.view(b, t, self.n_kv_heads, self.head_dim)
+            v = v_raw.view(b, t, self.n_kv_heads, self.head_dim)
+        else:
+            qkv = self.c_attn(x)
+            q_size = self.heads * self.head_dim
+            kv_size = self.n_kv_heads * self.head_dim
+            q, k, v = torch.split(qkv, [q_size, kv_size, kv_size], dim=-1)
+            q = q.view(b, t, self.heads, self.head_dim)
+            k = k.view(b, t, self.n_kv_heads, self.head_dim)
+            v = v.view(b, t, self.n_kv_heads, self.head_dim)
 
-        q = q.view(b, t, self.heads, self.head_dim)
-        k = k.view(b, t, self.n_kv_heads, self.head_dim)
-        v = v.view(b, t, self.n_kv_heads, self.head_dim)
-
+        selector_active = self.selector_mode != "none"
+        q_unrot = q
+        k_unrot = k
+        rope_emb = None
         if self.rope is not None:
             rope_emb = self.rope(t, x.device)
             q = RotaryPositionalEncoding.apply_rotary(q, rope_emb)
             k = RotaryPositionalEncoding.apply_rotary(k, rope_emb)
 
-        attn_mask = None
+        causal = bool(getattr(self.cfg, "causal", True))
+        alibi = bool(getattr(self.cfg, "alibi", False))
         sparsity = getattr(self.cfg, "sparsity", "none")
+        sw = getattr(self.cfg, "sw", None)
+        static_patterns = sparsity != "none" or (sparsity == "none" and sw)
 
-        def ensure_mask() -> torch.Tensor:
-            nonlocal attn_mask
-            if attn_mask is None:
-                attn_mask = torch.full((t, t), float("-inf"), device=x.device)
-            return attn_mask
+        linear_enabled = self.kind == "LINEAR"
+        if linear_enabled and (selector_active or sparsity != "none" or sw or alibi):
+            linear_enabled = False
 
-        # Optional selector stub: approximate token pruning via a local window when enabled.
-        if self.selector_mode != "none":
-            mask = ensure_mask()
-            window = int(self.selector_topk or 0) or t
-            window = min(window, t)
-            for i in range(t):
-                lo = max(0, i - window // 2)
-                hi = min(t, i + window // 2 + 1)
-                mask[i, lo:hi] = 0.0
+        attn_mask: Tensor | None = None
+        if not linear_enabled:
+            static_mask: Tensor | None = None
+            if static_patterns:
+                static_mask = torch.full((t, t), float("-inf"), device=x.device)
+                if sparsity == "local_block":
+                    w = int(self.cfg.sw or self.head_dim)
+                    for i in range(t):
+                        lo = max(0, i - w)
+                        hi = i + 1 if causal else min(t, i + w + 1)
+                        static_mask[i, lo:hi] = 0.0
+                    bsz = int(self.cfg.block_size or w)
+                    stride = int(getattr(self.cfg, "block_stride", bsz))
+                    for i in range(t):
+                        hi = i + 1 if causal else t
+                        for start in range(0, hi, max(1, stride)):
+                            end = min(hi, start + bsz)
+                            if end > start:
+                                static_mask[i, start:end] = 0.0
+                elif sparsity == "local_global":
+                    w = int(self.cfg.sw or self.head_dim)
+                    gstride = int(getattr(self.cfg, "global_stride", 0) or 0)
+                    for i in range(t):
+                        lo = max(0, i - w)
+                        hi = i + 1 if causal else min(t, i + w + 1)
+                        static_mask[i, lo:hi] = 0.0
+                        if gstride > 0:
+                            global_idx = torch.arange(
+                                0, i + 1 if causal else t, gstride, device=x.device
+                            )
+                            static_mask[i, global_idx] = 0.0
+                        static_mask[i, 0] = 0.0
+                elif sparsity == "block" and getattr(self.cfg, "block_size", None):
+                    bsz = int(self.cfg.block_size or 0)
+                    stride = int(getattr(self.cfg, "block_stride", self.cfg.block_size or bsz))
+                    for start in range(0, t, max(1, stride)):
+                        end = min(t, start + bsz)
+                        for i in range(start, end):
+                            hi = min(end, i + 1) if causal else end
+                            static_mask[i, start:hi] = 0.0
+                elif sparsity == "dilated" and getattr(self.cfg, "dilation", None):
+                    dilation = max(1, int(self.cfg.dilation or 1))
+                    for i in range(t):
+                        for offset in range(min(dilation, t)):
+                            if i % dilation != offset:
+                                continue
+                            idx = torch.arange(
+                                offset, (i + 1) if causal else t, dilation, device=x.device
+                            )
+                            static_mask[i, idx] = 0.0
+                else:
+                    sliding_active = sparsity == "sliding" or (
+                        sparsity == "none" and getattr(self.cfg, "sw", None)
+                    )
+                    if sliding_active:
+                        w = int(self.cfg.sw or self.head_dim)
+                        for i in range(t):
+                            lo = max(0, i - w)
+                            hi = i + 1 if causal else min(t, i + w + 1)
+                            static_mask[i, lo:hi] = 0.0
 
-        if sparsity == "local_block":
-            mask = ensure_mask()
-            w = int(self.cfg.sw or self.head_dim)
-            for i in range(t):
-                lo = max(0, i - w)
-                hi = min(t, i + w + 1)
-                mask[i, lo:hi] = 0.0
-            bsz = int(self.cfg.block_size or w)
-            stride = int(getattr(self.cfg, "block_stride", bsz))
-            for start in range(0, t, max(1, stride)):
-                end = min(t, start + bsz)
-                mask[:, start:end] = 0.0
-        elif sparsity == "local_global":
-            mask = ensure_mask()
-            w = int(self.cfg.sw or self.head_dim)
-            gstride = int(getattr(self.cfg, "global_stride", 0) or 0)
-            for i in range(t):
-                lo = max(0, i - w)
-                hi = min(t, i + w + 1)
-                mask[i, lo:hi] = 0.0
-            if gstride and gstride > 0:
-                global_idx = torch.arange(0, t, gstride, device=x.device)
-                mask[:, global_idx] = 0.0
-            mask[:, 0] = 0.0
-        elif sparsity == "block" and getattr(self.cfg, "block_size", None):
-            mask = ensure_mask()
-            bsz = int(self.cfg.block_size or 0)
-            stride = int(getattr(self.cfg, "block_stride", self.cfg.block_size or bsz))
-            for start in range(0, t, max(1, stride)):
-                end = min(t, start + bsz)
-                mask[start:end, start:end] = 0.0
-        elif sparsity == "dilated" and getattr(self.cfg, "dilation", None):
-            mask = ensure_mask()
-            dilation = max(1, int(self.cfg.dilation or 1))
-            for offset in range(min(dilation, t)):
-                idx = torch.arange(offset, t, dilation, device=x.device)
-                mask[idx.unsqueeze(0), idx.unsqueeze(1)] = 0.0
-        else:
-            sliding_active = sparsity == "sliding" or (
-                sparsity == "none" and getattr(self.cfg, "sw", None)
-            )
-            if sliding_active:
-                mask = ensure_mask()
-                w = int(self.cfg.sw or self.head_dim)
-                for i in range(t):
-                    lo = max(0, i - w)
-                    hi = min(t, i + w + 1)
-                    mask[i, lo:hi] = 0.0
+            selector_mask: Tensor | None = None
+            if selector_active:
+                if rope_emb is None or self.selector_rope == "none":
+                    q_sel = q_unrot
+                    k_sel = k_unrot
+                elif self.selector_rope == "full":
+                    q_sel = q
+                    k_sel = k
+                else:
+                    rot_dim = max(
+                        0,
+                        min(int(self.selector_dim or self.head_dim), int(self.head_dim // 2)),
+                    )
+                    rot_dim = (rot_dim // 2) * 2
+                    if rot_dim <= 0:
+                        q_sel = q_unrot
+                        k_sel = k_unrot
+                    else:
+                        rope_slice = rope_emb[:, :rot_dim]
+                        q_rot_part = RotaryPositionalEncoding.apply_rotary(
+                            q_unrot[..., :rot_dim], rope_slice
+                        )
+                        k_rot_part = RotaryPositionalEncoding.apply_rotary(
+                            k_unrot[..., :rot_dim], rope_slice
+                        )
+                        q_sel = torch.cat([q_rot_part, q_unrot[..., rot_dim:]], dim=-1)
+                        k_sel = torch.cat([k_rot_part, k_unrot[..., rot_dim:]], dim=-1)
+
+                # Expand selector keys to match heads (GQA repeat), mirroring attention.
+                if self.n_kv_heads != self.heads:
+                    repeat_factor = math.ceil(self.heads / self.n_kv_heads)
+                    k_sel = k_sel.repeat_interleave(repeat_factor, dim=2)[:, :, : self.heads, :]
+                # Transpose to (B, H, T, D)
+                q_sel_t = q_sel.transpose(1, 2)
+                k_sel_t = k_sel.transpose(1, 2)
+                selector_mask = self._build_selector_mask(q_sel_t, k_sel_t, causal=causal)
+
+            if static_mask is not None:
+                attn_mask = static_mask
+            if selector_mask is not None:
+                attn_mask = (
+                    selector_mask if attn_mask is None else torch.maximum(attn_mask, selector_mask)
+                )
+
+            if alibi:
+                bias = _build_alibi_bias(self.heads, t, device=x.device, causal=causal)
+                if attn_mask is None and causal:
+                    causal_mask = torch.zeros((t, t), device=x.device)
+                    causal_mask = causal_mask.masked_fill(
+                        torch.triu(torch.ones(t, t, device=x.device), diagonal=1) == 1,
+                        float("-inf"),
+                    )
+                    attn_mask = causal_mask
+                attn_mask = bias if attn_mask is None else attn_mask + bias
 
         # Adjust for GQA if needed (manual repeat)
         if self.n_kv_heads != self.heads:
-            # simple repeat_interleave
-            k = k.repeat_interleave(self.heads // self.n_kv_heads, dim=2)
-            v = v.repeat_interleave(self.heads // self.n_kv_heads, dim=2)
+            repeat_factor = math.ceil(self.heads / self.n_kv_heads)
+            k = k.repeat_interleave(repeat_factor, dim=2)[:, :, : self.heads, :]
+            v = v.repeat_interleave(repeat_factor, dim=2)[:, :, : self.heads, :]
 
         # Transpose for SDPA: (B, H, T, D)
         q = q.transpose(1, 2)
@@ -252,7 +411,34 @@ class MultiHeadSelfAttention(nn.Module):
         if gate is not None and self.gating_pos == "value":
             v = v * gate
 
-        out = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask)
+        if linear_enabled:
+            feature = str(getattr(self.cfg, "linear_feature_map", "elu") or "elu").lower()
+            if feature == "elu":
+                q_phi = F.elu(q.to(dtype=torch.float32)) + 1.0
+                k_phi = F.elu(k.to(dtype=torch.float32)) + 1.0
+            else:
+                q_phi = q.to(dtype=torch.float32)
+                k_phi = k.to(dtype=torch.float32)
+            v_f = v.to(dtype=torch.float32)
+
+            if causal:
+                k_acc = k_phi.cumsum(dim=2)
+                kv = torch.einsum("bhtd,bhtm->bhtdm", k_phi, v_f)
+                kv_acc = kv.cumsum(dim=2)
+            else:
+                k_sum = k_phi.sum(dim=2, keepdim=True)
+                kv_sum = torch.einsum("bhtd,bhtm->bhdm", k_phi, v_f).unsqueeze(2)
+                k_acc = k_sum.expand(-1, -1, t, -1)
+                kv_acc = kv_sum.expand(-1, -1, t, -1, -1)
+
+            denom = torch.einsum("bhtd,bhtd->bht", q_phi, k_acc).unsqueeze(-1).clamp_min(1e-6)
+            out = torch.einsum("bhtd,bhtdm->bhtm", q_phi, kv_acc) / denom
+            out = out.to(dtype=q.dtype)
+        else:
+            if attn_mask is None:
+                out = F.scaled_dot_product_attention(q, k, v, is_causal=causal)
+            else:
+                out = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask)
 
         if gate is not None and self.gating_pos == "output":
             out = out * gate
@@ -260,28 +446,34 @@ class MultiHeadSelfAttention(nn.Module):
         # Transpose back: (B, T, H, D)
         out = out.transpose(1, 2).contiguous()
         out = out.view(b, t, self.heads * self.head_dim)
-        return cast(Tensor, self.c_proj(out))
+        out = cast(Tensor, self.c_proj(out))
+        if self.dropout_p > 0.0:
+            out = cast(Tensor, F.dropout(out, p=self.dropout_p, training=self.training))
+        return out
 
 
 class DenseFFN(nn.Module):
-    def __init__(self, dim: int, hidden: int, activation: str):
+    def __init__(self, dim: int, hidden: int, activation: str, dropout: float = 0.0):
         super().__init__()
         inner = hidden * 2 if activation == "swiglu" else hidden
         self.fc1 = nn.Linear(dim, inner)
         self.fc2 = nn.Linear(inner if activation != "swiglu" else hidden, dim)
         self.activation_name = activation
         self.activation: Callable[[Tensor], Tensor] = ActivationLookup.get(activation) or F.silu
+        self.dropout_p = float(dropout or 0.0)
 
     def forward(self, x: Tensor) -> Tensor:
         out = self.fc1(x)
         out = self.activation(out)
+        if self.dropout_p > 0.0:
+            out = cast(Tensor, F.dropout(out, p=self.dropout_p, training=self.training))
         return cast(Tensor, self.fc2(out))
 
 
 class Expert(nn.Module):
     def __init__(self, dim: int, hidden: int, activation: str, hops: int = 1):
         super().__init__()
-        self.net = DenseFFN(dim, hidden, activation)
+        self.net = DenseFFN(dim, hidden, activation, dropout=0.0)
         self.hops = max(1, hops)
 
     def forward(self, x: Tensor) -> Tensor:
@@ -296,6 +488,8 @@ class MoELayer(nn.Module):
         self.cfg = cfg
         self.router_type = getattr(cfg, "router_type", "softmax")
         self.router_bias_detached = bool(getattr(cfg, "router_bias_detached", False))
+        self.drop_policy = getattr(cfg, "drop_policy", "none") or "none"
+        self.capacity_factor = float(getattr(cfg, "capacity_factor", 1.0) or 1.0)
         self.shared_expert_count = max(
             int(getattr(cfg, "shared", 0) or 0), 1 if getattr(cfg, "shared_expert", False) else 0
         )
@@ -356,6 +550,13 @@ class MoELayer(nn.Module):
         else:
             weights = torch.softmax(topk_val, dim=-1)
         outputs = torch.zeros_like(x)
+        overflow_count = 0
+        capacity = None
+        if self.drop_policy != "none" and self.cfg.n_experts > 0:
+            # Approximate Switch-style capacity per expert.
+            bsz, seq_len, _ = x.shape
+            assignments = max(1, int(bsz * seq_len * self.cfg.k))
+            capacity = max(1, int(self.capacity_factor * (assignments / self.cfg.n_experts)))
         # Track simple routing stats for aux losses/metrics
         # Entropy over top-k weights (normalized to [0,1] by log(k))
         eps = 1e-8
@@ -382,12 +583,23 @@ class MoELayer(nn.Module):
             for expert_id in range(self.cfg.n_experts):
                 mask = idx == expert_id
                 if mask.any():
+                    if capacity is not None and self.drop_policy == "greedy":
+                        flat = mask.reshape(-1)
+                        positions = flat.nonzero(as_tuple=False).squeeze(-1)
+                        if positions.numel() > capacity:
+                            overflow_count += int(positions.numel() - capacity)
+                            kept = positions[:capacity]
+                            flat = torch.zeros_like(flat)
+                            flat[kept] = True
+                            mask = flat.view_as(mask)
                     expert_out = self.experts[expert_id](x[mask])
                     expert_outputs = expert_outputs.index_put((mask,), expert_out)
             outputs = outputs + expert_outputs * weight
         if self.shared_expert is not None:
             shared_out = self.shared_expert(x)
             outputs = outputs + shared_out
+        total_assignments = max(1, int(x.shape[0] * x.shape[1] * self.cfg.k))
+        self.last_overflow = float(overflow_count) / float(total_assignments)
         return outputs
 
     def sort_experts(self) -> None:
@@ -411,18 +623,57 @@ class SSMLayer(nn.Module):
     def __init__(self, cfg: SSMConfig, dim: int):
         super().__init__()
         self.cfg = cfg
+        inner = int(getattr(cfg, "d_state", dim) or dim)
+        inner = max(1, inner)
+        self.in_proj = nn.Linear(dim, inner)
         self.conv = nn.Conv1d(
-            in_channels=dim,
-            out_channels=dim,
+            in_channels=inner,
+            out_channels=inner,
             kernel_size=cfg.d_conv,
-            padding="same",
+            padding=0,
             groups=1,
         )
+        self.out_proj = nn.Linear(inner, dim)
+        self._conv_left_pad = max(0, int(cfg.d_conv) - 1)
 
     def forward(self, x: Tensor) -> Tensor:
-        # (B, T, D) -> (B, D, T)
-        seq = self.conv(x.transpose(1, 2))
-        return cast(Tensor, seq.transpose(1, 2))
+        gate = float(getattr(self.cfg, "gate", 1.0) or 1.0)
+        h = self.in_proj(x)
+        seq_in = h.transpose(1, 2)
+        if self._conv_left_pad:
+            seq_in = F.pad(seq_in, (self._conv_left_pad, 0))
+        seq = self.conv(seq_in).transpose(1, 2)
+        out = self.out_proj(cast(Tensor, seq))
+        return cast(Tensor, out * gate)
+
+
+def _build_alibi_bias(heads: int, seq_len: int, *, device: torch.device, causal: bool) -> Tensor:
+    # Standard ALiBi slopes (head-dependent) with a simple power-of-two fallback.
+    # Bias is negative for distant keys: -slope[h] * (i - j).
+    def get_slopes(n: int) -> list[float]:
+        # From the ALiBi paper reference implementation.
+        import math
+
+        def power_of_two_slopes(power: int) -> list[float]:
+            start = 2 ** (-(2 ** -(math.log2(power) - 3)))
+            ratio = start
+            return [start * (ratio**i) for i in range(power)]
+
+        if math.log2(n).is_integer():
+            return power_of_two_slopes(n)
+        closest_power = 2 ** int(math.floor(math.log2(n)))
+        slopes = power_of_two_slopes(closest_power)
+        extra = get_slopes(2 * closest_power)[0::2]
+        slopes.extend(extra[: n - closest_power])
+        return slopes
+
+    slopes = torch.tensor(get_slopes(heads), device=device, dtype=torch.float32)
+    pos = torch.arange(seq_len, device=device, dtype=torch.int64)
+    dist = pos[:, None] - pos[None, :]
+    if causal:
+        dist = dist.clamp_min(0)
+    bias = -slopes[:, None, None] * dist.to(dtype=torch.float32)[None, :, :]
+    return cast(Tensor, bias)
 
 
 class RetroModule(nn.Module):
@@ -431,12 +682,143 @@ class RetroModule(nn.Module):
         self.cfg = cfg
 
     def forward(self, x: Tensor) -> Tensor:
-        window = min(self.cfg.memory_tokens, x.shape[1])
+        # Approximate Retro memory as a long-horizon moving average. Interpret
+        # (memory_tokens * stride) as an effective horizon (in tokens).
+        horizon = max(1, int(self.cfg.memory_tokens) * max(1, int(self.cfg.stride)))
+        window = min(horizon, x.shape[1])
         cumsum = torch.cumsum(x, dim=1)
         padding = torch.zeros_like(x[:, :window])
         shifted = torch.cat([padding, cumsum[:, :-window]], dim=1)
-        avg = (cumsum - shifted) / window
-        return avg * self.cfg.gating_weight
+        avg = (cumsum - shifted) / max(1, window)
+
+        agg = getattr(self.cfg, "aggregator", "gate")
+        if agg == "mean":
+            out = avg
+        elif agg == "attention":
+            scale = 1.0 / math.sqrt(max(1, x.shape[-1]))
+            score = (x * avg).sum(dim=-1, keepdim=True) * scale
+            out = torch.sigmoid(score) * avg
+        else:  # "gate"
+            out = avg
+        return cast(Tensor, out * float(self.cfg.gating_weight))
+
+
+class MemoryTokensModule(nn.Module):
+    def __init__(self, cfg: MemoryTokensConfig, dim: int):
+        super().__init__()
+        self.cfg = cfg
+        self.heads = int(cfg.heads)
+        self.head_dim = int(cfg.head_dim)
+        self.dropout_p = float(getattr(cfg, "dropout", 0.0) or 0.0)
+        inner = self.heads * self.head_dim
+        self.q_proj = nn.Linear(dim, inner, bias=True)
+        self.o_proj = nn.Linear(inner, dim, bias=True)
+        init_std = float(getattr(cfg, "init_std", 0.02) or 0.02)
+        mem = torch.empty(int(cfg.tokens), 2 * inner, dtype=torch.float32)
+        nn.init.normal_(mem, mean=0.0, std=init_std)
+        self.mem_kv = nn.Parameter(mem)
+
+    def forward(self, x: Tensor) -> Tensor:
+        b, t, _ = x.shape
+        inner = self.heads * self.head_dim
+        q = self.q_proj(x).view(b, t, self.heads, self.head_dim).transpose(1, 2)
+        k_raw, v_raw = self.mem_kv.split(inner, dim=-1)
+        k = k_raw.view(1, -1, self.heads, self.head_dim).expand(b, -1, -1, -1).transpose(1, 2)
+        v = v_raw.view(1, -1, self.heads, self.head_dim).expand(b, -1, -1, -1).transpose(1, 2)
+        out = F.scaled_dot_product_attention(q, k.to(dtype=q.dtype), v.to(dtype=q.dtype))
+        out = out.transpose(1, 2).contiguous().view(b, t, inner)
+        out = cast(Tensor, self.o_proj(out))
+        if self.dropout_p > 0.0:
+            out = cast(Tensor, F.dropout(out, p=self.dropout_p, training=self.training))
+        return cast(Tensor, out * float(getattr(self.cfg, "gating_weight", 0.0) or 0.0))
+
+
+class ChunkMemoryModule(nn.Module):
+    def __init__(self, cfg: ChunkMemoryConfig, dim: int):
+        super().__init__()
+        self.cfg = cfg
+        self.heads = int(cfg.heads)
+        self.head_dim = int(cfg.head_dim)
+        self.dropout_p = float(getattr(cfg, "dropout", 0.0) or 0.0)
+        inner = self.heads * self.head_dim
+        self.q_proj = nn.Linear(dim, inner, bias=True)
+        self.k_proj = nn.Linear(dim, inner, bias=True)
+        self.v_proj = nn.Linear(dim, inner, bias=True)
+        self.o_proj = nn.Linear(inner, dim, bias=True)
+
+    def forward(self, x: Tensor) -> Tensor:
+        b, t, _ = x.shape
+        chunk = max(1, int(self.cfg.chunk_size))
+        stride = int(getattr(self.cfg, "stride", None) or chunk)
+        stride = max(1, stride)
+        ends = torch.arange(0, t, stride, device=x.device, dtype=torch.int64)
+        if ends.numel() == 0:
+            return x.new_zeros(b, t, x.size(-1))
+        starts = (ends - chunk + 1).clamp_min(0)
+
+        x_f = x.to(dtype=torch.float32)
+        cumsum = torch.cumsum(x_f, dim=1)
+        end_sum = cumsum.index_select(1, ends)
+        prev_idx = (starts - 1).clamp_min(0)
+        prev_sum = cumsum.index_select(1, prev_idx)
+        prev_sum = prev_sum * (starts > 0).to(dtype=torch.float32).view(1, -1, 1)
+        window_sum = end_sum - prev_sum
+        lengths = (ends - starts + 1).to(dtype=torch.float32).view(1, -1, 1).clamp_min(1.0)
+        summary = (window_sum / lengths).to(dtype=x.dtype)
+
+        inner = self.heads * self.head_dim
+        q = self.q_proj(x).view(b, t, self.heads, self.head_dim).transpose(1, 2)
+        k = self.k_proj(summary).view(b, -1, self.heads, self.head_dim).transpose(1, 2)
+        v = self.v_proj(summary).view(b, -1, self.heads, self.head_dim).transpose(1, 2)
+
+        positions = torch.arange(t, device=x.device, dtype=torch.int64).view(t, 1)
+        allowed = ends.view(1, -1) <= positions
+        attn_mask = torch.where(allowed, 0.0, float("-inf")).to(dtype=torch.float32)
+        out = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask)
+        out = out.transpose(1, 2).contiguous().view(b, t, inner)
+        out = cast(Tensor, self.o_proj(out))
+        if self.dropout_p > 0.0:
+            out = cast(Tensor, F.dropout(out, p=self.dropout_p, training=self.training))
+        return cast(Tensor, out * float(getattr(self.cfg, "gating_weight", 0.0) or 0.0))
+
+
+class BranchRouter(nn.Module):
+    def __init__(self, cfg: BranchRouterConfig, dim: int):
+        super().__init__()
+        self.cfg = cfg
+        self.targets = list(cfg.targets or [])
+        self.dropout = nn.Dropout(float(getattr(cfg, "dropout", 0.0) or 0.0))
+        self.temperature = float(getattr(cfg, "temperature", 1.0) or 1.0)
+        self.last_entropy: Tensor | None = None
+        self.net: nn.Module
+        n_targets = len(self.targets)
+        hidden = getattr(cfg, "hidden", None)
+        if hidden:
+            hidden_dim = int(hidden)
+            self.net = nn.Sequential(
+                nn.Linear(dim, hidden_dim),
+                nn.SiLU(),
+                nn.Linear(hidden_dim, n_targets),
+            )
+        else:
+            self.net = nn.Linear(dim, n_targets)
+
+    def forward(self, x: Tensor) -> Tensor:
+        # x: (B, T, D)
+        if not self.targets:
+            return x.new_zeros(x.shape[0], x.shape[1], 0)
+        x_in = self.dropout(x)
+        temp = self.temperature if self.temperature > 0.0 else 1.0
+        if getattr(self.cfg, "router_type", "token") == "sequence":
+            logits = self.net(x_in.mean(dim=1, keepdim=True)) / temp
+            weights = torch.softmax(logits, dim=-1).expand(-1, x.shape[1], -1)
+        else:
+            logits = self.net(x_in) / temp
+            weights = torch.softmax(logits, dim=-1)
+        eps = 1e-8
+        entropy = -(weights * (weights + eps).log()).sum(dim=-1).mean()
+        self.last_entropy = entropy
+        return cast(Tensor, weights)
 
 
 class CustomModule(nn.Module):
@@ -451,6 +833,47 @@ class CustomModule(nn.Module):
 
     def forward(self, x: Tensor) -> Tensor:
         return cast(Tensor, self.net(x))
+
+
+class AssociativeMemoryModule(nn.Module):
+    def __init__(self, cfg: AssociativeMemoryConfig, dim: int):
+        super().__init__()
+        self.cfg = cfg
+        self.heads = int(cfg.heads)
+        self.head_dim = int(cfg.head_dim)
+        self.dropout_p = float(getattr(cfg, "dropout", 0.0) or 0.0)
+        inner = self.heads * self.head_dim
+        self.q_proj = nn.Linear(dim, inner, bias=True)
+        self.k_proj = nn.Linear(dim, inner, bias=True)
+        self.v_proj = nn.Linear(dim, inner, bias=True)
+        self.o_proj = nn.Linear(inner, dim, bias=True)
+
+    def forward(self, x: Tensor) -> Tensor:
+        b, t, _ = x.shape
+        q = self.q_proj(x).view(b, t, self.heads, self.head_dim).transpose(1, 2)
+        k = self.k_proj(x).view(b, t, self.heads, self.head_dim).transpose(1, 2)
+        v = self.v_proj(x).view(b, t, self.heads, self.head_dim).transpose(1, 2)
+
+        feature = str(getattr(self.cfg, "feature_map", "elu") or "elu").lower()
+        if feature == "elu":
+            q_phi = F.elu(q.to(dtype=torch.float32)) + 1.0
+            k_phi = F.elu(k.to(dtype=torch.float32)) + 1.0
+        else:
+            q_phi = q.to(dtype=torch.float32)
+            k_phi = k.to(dtype=torch.float32)
+        v_f = v.to(dtype=torch.float32)
+
+        k_acc = k_phi.cumsum(dim=2)
+        kv = torch.einsum("bhtd,bhtm->bhtdm", k_phi, v_f)
+        kv_acc = kv.cumsum(dim=2)
+        denom = torch.einsum("bhtd,bhtd->bht", q_phi, k_acc).unsqueeze(-1).clamp_min(1e-6)
+        out = torch.einsum("bhtd,bhtdm->bhtm", q_phi, kv_acc) / denom
+        out = out.to(dtype=x.dtype)
+        out = out.transpose(1, 2).contiguous().view(b, t, self.heads * self.head_dim)
+        out = cast(Tensor, self.o_proj(out))
+        if self.dropout_p > 0.0:
+            out = cast(Tensor, F.dropout(out, p=self.dropout_p, training=self.training))
+        return cast(Tensor, out * float(getattr(self.cfg, "gating_weight", 0.0) or 0.0))
 
 
 class GatedModule(nn.Module):
@@ -478,29 +901,155 @@ class EvolutionBlock(nn.Module):
                 raise TypeError(msg)
             self.ffn = MoELayer(dim, cfg.ffn)
         else:
-            self.ffn = DenseFFN(dim, cfg.ffn.hidden, getattr(cfg.ffn, "activation", "silu"))
+            self.ffn = DenseFFN(
+                dim,
+                cfg.ffn.hidden,
+                getattr(cfg.ffn, "activation", "silu"),
+                dropout=float(getattr(cfg.ffn, "dropout", 0.0) or 0.0),
+            )
         self.ssm = SSMLayer(cfg.ssm, dim) if cfg.ssm else None
         self.norm = _norm_layer(norm_type, dim)
+        self.router: BranchRouter | None = None
+        self.memory_extras = nn.ModuleList()
         self.extras = nn.ModuleList()
+        self._gate_params = nn.ParameterDict()
+        self._gate_buffers: dict[str, str] = {}
+        self._layer_scale_params = nn.ParameterDict()
+        self._layer_scale_buffers: dict[str, str] = {}
+        gate_cfgs: list[GatedModuleConfig] = []
+        layerscale_cfgs: list[LayerScaleConfig] = []
+        router_cfgs: list[BranchRouterConfig] = []
         for extra in cfg.extras:
             if isinstance(extra, RetroConfig):
-                self.extras.append(RetroModule(extra))
+                self.memory_extras.append(RetroModule(extra))
             elif isinstance(extra, GatedModuleConfig):
-                self.extras.append(GatedModule(extra))
+                gate_cfgs.append(extra)
+            elif isinstance(extra, AssociativeMemoryConfig):
+                self.memory_extras.append(AssociativeMemoryModule(extra, dim))
+            elif isinstance(extra, MemoryTokensConfig):
+                self.memory_extras.append(MemoryTokensModule(extra, dim))
+            elif isinstance(extra, ChunkMemoryConfig):
+                self.memory_extras.append(ChunkMemoryModule(extra, dim))
+            elif isinstance(extra, BranchRouterConfig):
+                router_cfgs.append(extra)
+            elif isinstance(extra, LayerScaleConfig):
+                layerscale_cfgs.append(extra)
             elif isinstance(extra, CustomModuleConfig):
                 builder = get_component(extra.name)
                 if builder is not None:
                     self.extras.append(builder(extra, dim))
                 else:
                     self.extras.append(CustomModule(extra, dim))
+        if router_cfgs:
+            self.router = BranchRouter(router_cfgs[-1], dim)
+        if gate_cfgs:
+            learnable = any(cfg.learnable for cfg in gate_cfgs)
+            init_by_target: dict[str, float] = {}
+            ordered_targets: list[str] = []
+            for gate_cfg in gate_cfgs:
+                for target in gate_cfg.targets:
+                    name = str(target)
+                    init_by_target[name] = float(gate_cfg.init_weight)
+                    if name not in ordered_targets:
+                        ordered_targets.append(name)
+            eps = 1e-6
+            for target in ordered_targets:
+                init = init_by_target.get(target, 1.0)
+                init = max(eps, min(1.0 - eps, float(init)))
+                logit = math.log(init / (1.0 - init))
+                if learnable:
+                    self._gate_params[target] = nn.Parameter(
+                        torch.tensor(logit, dtype=torch.float32)
+                    )
+                else:
+                    buf_name = f"gate_{target}_logit"
+                    self.register_buffer(buf_name, torch.tensor(logit, dtype=torch.float32))
+                    self._gate_buffers[target] = buf_name
+        if layerscale_cfgs:
+            ls_init_by_target: dict[str, float] = {}
+            learnable_by_target: dict[str, bool] = {}
+            ls_ordered_targets: list[str] = []
+            for ls_cfg in layerscale_cfgs:
+                init = float(getattr(ls_cfg, "init", 1e-5) or 1e-5)
+                learnable = bool(getattr(ls_cfg, "learnable", True))
+                for target in ls_cfg.targets:
+                    name = str(target)
+                    ls_init_by_target[name] = init
+                    learnable_by_target[name] = learnable_by_target.get(name, False) or learnable
+                    if name not in ls_ordered_targets:
+                        ls_ordered_targets.append(name)
+            for target in ls_ordered_targets:
+                init = ls_init_by_target.get(target, 1e-5)
+                vec = torch.full((dim,), float(init), dtype=torch.float32)
+                if learnable_by_target.get(target, True):
+                    self._layer_scale_params[target] = nn.Parameter(vec)
+                else:
+                    buf_name = f"layer_scale_{target}"
+                    self.register_buffer(buf_name, vec)
+                    self._layer_scale_buffers[target] = buf_name
+
+    def _gate_scale(self, name: str, x: Tensor) -> Tensor:
+        if name in self._gate_params:
+            return torch.sigmoid(self._gate_params[name]).to(dtype=x.dtype, device=x.device)
+        buf_name = self._gate_buffers.get(name)
+        if buf_name:
+            buf = getattr(self, buf_name)
+            if isinstance(buf, torch.Tensor):
+                return torch.sigmoid(buf).to(dtype=x.dtype, device=x.device)
+        return x.new_tensor(1.0)
+
+    def _layer_scale(self, name: str, x: Tensor) -> Tensor:
+        if name in self._layer_scale_params:
+            return cast(Tensor, self._layer_scale_params[name]).to(dtype=x.dtype, device=x.device)
+        buf_name = self._layer_scale_buffers.get(name)
+        if buf_name:
+            buf = getattr(self, buf_name)
+            if isinstance(buf, torch.Tensor):
+                return buf.to(dtype=x.dtype, device=x.device)
+        return x.new_tensor(1.0)
 
     def forward(self, x: Tensor) -> Tensor:
-        if self.attn:
-            x = x + self.attn(self.norm(x))
-        if self.ssm:
-            x = x + self.ssm(self.norm(x))
-        if self.ffn:
-            x = x + self.ffn(self.norm(x))
+        if self.router is None:
+            if self.attn:
+                out = self.attn(self.norm(x))
+                out = out * self._layer_scale("attn", out)
+                x = x + out * self._gate_scale("attn", out)
+            if self.ssm:
+                out = self.ssm(self.norm(x))
+                out = out * self._layer_scale("ssm", out)
+                x = x + out * self._gate_scale("ssm", out)
+            if self.ffn:
+                out = self.ffn(self.norm(x))
+                out = out * self._layer_scale("ffn", out)
+                x = x + out * self._gate_scale("ffn", out)
+            for memory_module in self.memory_extras:
+                out = memory_module(self.norm(x))
+                out = out * self._layer_scale("memory", out)
+                x = x + out * self._gate_scale("memory", out)
+            for extra in self.extras:
+                x = x + extra(self.norm(x))  # nosec B610 - pure tensor gating, no SQL context
+            return x
+
+        x_norm = self.norm(x)
+        weights = self.router(x_norm)
+        mixed = torch.zeros_like(x)
+        for idx, target in enumerate(self.router.targets):
+            out = None
+            if target == "attn" and self.attn is not None:
+                out = self.attn(x_norm)
+            elif target == "ssm" and self.ssm is not None:
+                out = self.ssm(x_norm)
+            elif target == "ffn" and self.ffn is not None:
+                out = self.ffn(x_norm)
+            elif target == "memory" and len(self.memory_extras) > 0:
+                out = sum(mem(x_norm) for mem in self.memory_extras)
+            if out is None:
+                out = torch.zeros_like(x)
+            out = out * self._layer_scale(target, out)
+            out = out * self._gate_scale(target, out)
+            w = weights[..., idx].unsqueeze(-1).to(dtype=out.dtype)
+            mixed = mixed + out * w
+        x = x + mixed
         for extra in self.extras:
             x = x + extra(self.norm(x))  # nosec B610 - pure tensor gating, no SQL context
         return x
@@ -514,11 +1063,23 @@ class EvolutionModel(nn.Module):
         if vocab is None:
             raise ValueError("Vocabulary must be specified in emb or head config.")
         self.embed = nn.Embedding(vocab, cfg.emb.dim)
+        init_std = float(getattr(cfg.emb, "init_std", 0.02) or 0.02)
+        nn.init.normal_(self.embed.weight, mean=0.0, std=init_std)
+        self.emb_dropout = nn.Dropout(float(getattr(cfg.emb, "dropout", 0.0) or 0.0))
         self.blocks = nn.ModuleList(
             [EvolutionBlock(cfg.emb.dim, block, norm_type=cfg.norm) for block in cfg.blocks]
         )
         self.norm = _norm_layer(cfg.norm, cfg.emb.dim)
         self.lm_head = nn.Linear(cfg.emb.dim, cfg.head.vocab)
+        if self.lm_head.bias is not None:
+            nn.init.zeros_(self.lm_head.bias)
+        if getattr(cfg.head, "tie_embeddings", True):
+            if cfg.head.vocab != vocab:
+                raise ValueError("tie_embeddings requires emb.vocab == head.vocab")
+            self.lm_head.weight = self.embed.weight
+        else:
+            nn.init.normal_(self.lm_head.weight, mean=0.0, std=init_std)
+        self._grad_checkpointing = False
         # Recurrence setup
         self._recurrence_order: list[tuple[int, RecurrenceConfig]] = sorted(
             enumerate(cfg.recurrences), key=lambda item: item[1].start
@@ -537,9 +1098,10 @@ class EvolutionModel(nn.Module):
 
     def forward(self, input_ids: Tensor) -> Tensor:
         x = self.embed(input_ids)
+        x = cast(Tensor, self.emb_dropout(x))
         if not self._recurrence_order:
             for block in self.blocks:
-                x = block(x)
+                x = self._run_block(block, x)
         else:
             idx = 0
             order_pos = 0
@@ -553,10 +1115,24 @@ class EvolutionModel(nn.Module):
                     idx = rec_cfg.end
                     order_pos += 1
                     continue
-                x = self.blocks[idx](x)
+                x = self._run_block(self.blocks[idx], x)
                 idx += 1
         x = self.norm(x)
         return cast(Tensor, self.lm_head(x))
+
+    def set_grad_checkpointing(self, enabled: bool) -> None:
+        self._grad_checkpointing = bool(enabled)
+
+    def _run_block(self, block: nn.Module, x: Tensor) -> Tensor:
+        if self._grad_checkpointing and self.training:
+            from torch.utils.checkpoint import checkpoint
+
+            try:
+                return cast(Tensor, checkpoint(block, x, use_reentrant=False))
+            except TypeError:
+                # Older torch versions do not support use_reentrant.
+                return cast(Tensor, checkpoint(block, x))
+        return cast(Tensor, block(x))
 
     def set_recurrence_steps(self, steps: dict[int, int]) -> None:
         for idx, value in steps.items():
@@ -579,7 +1155,7 @@ class EvolutionModel(nn.Module):
         for _ in range(current_steps):
             h = state
             for block_idx in range(start_idx, end_idx):
-                h = self.blocks[block_idx](h)
+                h = self._run_block(self.blocks[block_idx], h)
             adapter_input = torch.cat([prelude_output, h], dim=-1) if rec_cfg.concat_prelude else h
             state = adapter(adapter_input, h)
         return state

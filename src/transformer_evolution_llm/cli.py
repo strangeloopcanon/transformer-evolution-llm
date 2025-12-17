@@ -11,7 +11,7 @@ from rich.console import Console
 from rich.table import Table
 
 from . import get_version
-from .api import export_frontier_seed, prune_checkpoints, run_evolution
+from .api import convert_checkpoints, export_frontier_seed, prune_checkpoints, run_evolution
 from .cache_builder import synthesize_cache
 from .orchestrator import EvolutionRunner
 
@@ -29,7 +29,7 @@ def version() -> None:
 def run(
     config: Annotated[Path, typer.Argument(..., exists=True, readable=True)],
     generations: Annotated[int, typer.Option(min=1)] = 4,
-    mode: Annotated[str, typer.Option(help="Evaluation backend (simulate/full).")] = "simulate",
+    mode: Annotated[str, typer.Option(help="Evaluation backend (simulate/live).")] = "simulate",
     seed: Annotated[int, typer.Option()] = 0,
     out: Annotated[Path, typer.Option()] = Path("runs/frontier.json"),
 ) -> None:
@@ -134,11 +134,96 @@ def prune_checkpoints_cmd(
         dry_run=dry_run,
     )
     console.print(f"[bold]Kept:[/] {len(kept)} checkpoints")
-    console.print(f"[bold]Removed:[/] {len(removed)} checkpoints" + (" (dry run)" if dry_run else ""))
+    console.print(
+        f"[bold]Removed:[/] {len(removed)} checkpoints" + (" (dry run)" if dry_run else "")
+    )
     if dry_run and removed:
         console.print("Would remove:")
         for path in removed:
             console.print(f"- {path}")
+
+
+@app.command("cleanup-run")
+def cleanup_run_cmd(
+    manifest: Annotated[Path, typer.Argument(help="Path to runs/*.manifest.json")],
+    keep: Annotated[
+        str,
+        typer.Option(help="What to keep: frontier | state | frontier+state."),
+    ] = "frontier",
+    apply: Annotated[bool, typer.Option(help="Apply deletions (default is dry run).")] = False,
+) -> None:
+    """Prune a run's checkpoints using its manifest metadata."""
+    if not manifest.exists():
+        raise typer.BadParameter(f"{manifest} does not exist")
+    payload = json.loads(manifest.read_text())
+    checkpoint_dir_raw = payload.get("checkpoint_dir")
+    frontier_raw = payload.get("frontier")
+    if not checkpoint_dir_raw or not frontier_raw:
+        raise typer.BadParameter("manifest missing checkpoint_dir/frontier fields")
+    checkpoint_dir = Path(checkpoint_dir_raw)
+    frontier_path = Path(frontier_raw)
+    state_path = frontier_path.with_name(frontier_path.stem + ".state.json")
+    frontier_arg: Path | None = None
+    state_arg: Path | None = None
+    keep_norm = (keep or "frontier").lower()
+    if keep_norm in {"frontier", "frontier+state"}:
+        frontier_arg = frontier_path
+    if keep_norm in {"state", "frontier+state"} and state_path.exists():
+        state_arg = state_path
+    # If applying deletions, compute size first (before files are removed).
+    preview_kept, preview_removed = prune_checkpoints(
+        checkpoint_dir=checkpoint_dir,
+        frontier_path=frontier_arg,
+        state_path=state_arg,
+        dry_run=True,
+    )
+    removed_bytes = 0
+    for path in preview_removed:
+        try:
+            removed_bytes += path.stat().st_size
+        except OSError:
+            continue
+    kept, removed = preview_kept, preview_removed
+    if apply and removed:
+        kept, removed = prune_checkpoints(
+            checkpoint_dir=checkpoint_dir,
+            frontier_path=frontier_arg,
+            state_path=state_arg,
+            dry_run=False,
+        )
+    gb = removed_bytes / (1024**3)
+    console.print(f"[bold]Kept:[/] {len(kept)} checkpoints")
+    console.print(
+        f"[bold]Removed:[/] {len(removed)} checkpoints"
+        + (" (dry run)" if not apply else "")
+        + f" (≈{gb:.2f} GiB)"
+    )
+
+
+@app.command("convert-checkpoints")
+def convert_checkpoints_cmd(
+    checkpoint_dir: Annotated[
+        Path, typer.Argument(help="Directory containing candidate checkpoints.")
+    ],
+    dtype: Annotated[str, typer.Option(help="Target dtype: fp16 | bf16 | fp32.")] = "fp16",
+    apply: Annotated[bool, typer.Option(help="Apply conversion (default is dry run).")] = False,
+) -> None:
+    """Downcast checkpoint tensors to shrink disk usage."""
+    paths, before, after = convert_checkpoints(
+        checkpoint_dir=checkpoint_dir,
+        dtype=dtype,
+        dry_run=not apply,
+    )
+    gb_before = before / (1024**3)
+    gb_after = after / (1024**3)
+    gb_saved = (before - after) / (1024**3)
+    console.print(f"[bold]Checkpoints:[/] {len(paths)}")
+    console.print(
+        f"[bold]Size:[/] {gb_before:.2f} GiB -> {gb_after:.2f} GiB"
+        + (" (dry run)" if not apply else "")
+    )
+    if apply:
+        console.print(f"[bold]Saved:[/] ≈{gb_saved:.2f} GiB")
 
 
 def main() -> None:

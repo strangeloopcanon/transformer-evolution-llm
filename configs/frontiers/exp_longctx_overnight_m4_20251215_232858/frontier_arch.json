@@ -1,0 +1,5627 @@
+[
+  {
+    "id": "toggle_linear_attention+tune_ffn_width_activation-15-bd07",
+    "parent": "tune_kv+tune_experts-13-ce13",
+    "metrics": {
+      "layers": 8.0,
+      "moe_blocks": 0.0,
+      "graph_entropy": 1.9742637761295438,
+      "selector_blocks": 0.0,
+      "selector_topk_avg": 0.0,
+      "memory_blocks": 0.0,
+      "recurrences": 1.0,
+      "novelty": 0.0625,
+      "params": 55876796.0,
+      "kv_bytes_per_token": 3328,
+      "throughput_proxy": 59.604644775390625,
+      "ppl_code": 41639.10546875,
+      "ppl_train": 26246.232421875,
+      "ppl_eval": 41639.10546875,
+      "ppl_math": 41639.10546875,
+      "throughput": 34.55284473217804,
+      "ram": 0.10407864302396774,
+      "long_recall": 0.0,
+      "long_recall_proxy": 0.125,
+      "router_entropy": 0.0,
+      "router_lb": 0.0,
+      "router_load_max": 0.0,
+      "router_load_min": 0.0,
+      "router_load_cv": 0.0,
+      "capacity_overflow": 0.0,
+      "max_grad_norm": 64.52818298339844,
+      "instability": 64.52818298339844,
+      "stop_reason_code": 1.0,
+      "nan_seen": 0.0,
+      "loss_spike": 0.3261432647705078,
+      "passkey_acc": 0.0,
+      "passkey_loss": 9.125327348709106,
+      "ppl_code_rec_1": 34988.8203125,
+      "ppl_code_rec_2": 30840.619140625,
+      "ppl_code_rec_4": 26246.232421875,
+      "ppl_code_rec_8": 38533.0234375,
+      "recurrence_gain": -3544.203125,
+      "prior_distance": 0.31869504844093444,
+      "longctx_score": 59872.69379821584,
+      "ppl_per_long_recall": 41639105.46875,
+      "ppl_per_param": 0.0007451949368884716,
+      "ppl_per_throughput": 1205.0847272199483
+    },
+    "spec": {
+      "model": {
+        "name": "m4-longctx-overnight-seed",
+        "emb": {
+          "dim": 512,
+          "vocab": 50257,
+          "rope": null,
+          "dropout": 0.0,
+          "init_std": 0.02
+        },
+        "blocks": [
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2251,
+              "activation": "silu",
+              "dropout": 0.0
+            },
+            "ssm": {
+              "kind": "mamba2",
+              "d_state": 16,
+              "d_conv": 4,
+              "dt_rank": 8,
+              "chunk": 128,
+              "gate": 0.1
+            },
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 8,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "LINEAR",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          }
+        ],
+        "head": {
+          "tie_embeddings": true,
+          "vocab": 50257
+        },
+        "norm": "rmsnorm",
+        "recurrences": [
+          {
+            "start": 2,
+            "end": 3,
+            "adapter": "linear",
+            "adapter_dim": null,
+            "concat_prelude": true,
+            "init_state": "noise",
+            "noise_std": 0.010344693882427074,
+            "train_recurrence": 1,
+            "max_train_recurrence": 6,
+            "curriculum_fraction": 0.26652549750157967,
+            "test_recurrences": [
+              1,
+              2,
+              4,
+              8
+            ]
+          }
+        ]
+      },
+      "train": {
+        "lr": 0.0008,
+        "warmup": 500,
+        "clip": 1.0,
+        "bf16": true,
+        "grad_checkpoint": true,
+        "max_tokens": 600000,
+        "weight_decay": 0.02,
+        "seed": 4242,
+        "router_lb_coeff": 0.01,
+        "router_entropy_coeff": 0.005,
+        "entropy_threshold": 0.5,
+        "entropy_patience": 3,
+        "instability_threshold": 50.0,
+        "no_improve_patience": 40,
+        "improvement_tolerance": 0.001,
+        "ppl_stop_threshold": null,
+        "init_checkpoint": null,
+        "passkey_eval_steps": 6,
+        "passkey_eval_batches": 4,
+        "passkey_eval_seq_len": 2048,
+        "passkey_eval_min_distance": 1536,
+        "passkey_eval_lr": 0.001,
+        "passkey_eval_batch_size": 1,
+        "passkey_eval_vocab_limit": 256,
+        "optimizer": {
+          "name": "adamw",
+          "lr": null,
+          "betas": null,
+          "eps": null,
+          "weight_decay": null
+        }
+      },
+      "data": {
+        "tokenizer": "gpt2",
+        "hf_revision": "main",
+        "seq_len": 512,
+        "batch_size": 1,
+        "workers": 0,
+        "shards": [
+          {
+            "name": "ag_news",
+            "split": "train",
+            "weight": 0.25,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "wikitext",
+            "split": "wikitext-2-raw-v1",
+            "weight": 0.35,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "mbpp",
+            "split": "train",
+            "weight": 0.4,
+            "cache_path": null,
+            "revision": null
+          }
+        ],
+        "eval_shards": [
+          {
+            "name": "ag_news",
+            "split": "test",
+            "weight": 1.0,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "wikitext",
+            "split": "wikitext-2-raw-v1:test",
+            "weight": 1.0,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "mbpp",
+            "split": "test",
+            "weight": 1.0,
+            "cache_path": null,
+            "revision": null
+          }
+        ],
+        "eval_tokens": 16384,
+        "healing_shards": [],
+        "healing_tokens": null
+      },
+      "evolution": {
+        "rung0_thresholds": {
+          "max_params": 150000000.0,
+          "max_kv_bytes_per_token": 4500.0,
+          "min_throughput_proxy": 5.0,
+          "gate_entropy_min": 0.0,
+          "gate_entropy_max": 4.0
+        },
+        "rung1_tokens": 200000,
+        "rung2_tokens": 600000,
+        "population": 24,
+        "topk_keep": 0.45,
+        "crossover_prob": 0.4,
+        "parent_selection": "map_elites",
+        "pareto_objectives": [
+          "ppl_code",
+          "ppl_math",
+          "long_recall",
+          "throughput",
+          "ram"
+        ],
+        "objectives": {
+          "ppl_code": "min",
+          "passkey_loss": "min",
+          "throughput": "max",
+          "ram": "min"
+        },
+        "composite_metrics": [
+          {
+            "name": "longctx_score",
+            "op": "weighted_sum",
+            "numerator": null,
+            "denominator": null,
+            "terms": {
+              "ppl_code": 1.0,
+              "passkey_loss": 2000.0,
+              "ram": 500.0,
+              "throughput": -2.0
+            },
+            "epsilon": 1e-06
+          }
+        ],
+        "promotion_prob": 0.0,
+        "promotion_min_layers": 0,
+        "promotion_min_moe_blocks": 0,
+        "promotion_steps_multiplier": 1.0,
+        "promotion_tokens_multiplier": 1.0,
+        "promotion_min_router_entropy": 0.0,
+        "promotion_min_recurrence_gain": 0.0,
+        "promotion_max_instability": null,
+        "archive_max_elites": 48,
+        "adaptive_mutation": true,
+        "adaptive_mutation_eta": 0.1,
+        "adaptive_mutation_min_weight": 0.05,
+        "adaptive_mutation_max_weight": 5.0,
+        "weight_inheritance": "parent"
+      },
+      "priors": {
+        "tokens_per_param": 4.0,
+        "window_scale": 6.0,
+        "rope_theta_default": 10000.0,
+        "prior_weight": 0.0,
+        "compute_penalty_weight": 0.0
+      }
+    }
+  },
+  {
+    "id": "tune_router+tune_experts-20-0198",
+    "parent": "toggle_linear_attention+tune_ffn_width_activation-15-bd07",
+    "metrics": {
+      "layers": 8.0,
+      "moe_blocks": 0.0,
+      "graph_entropy": 1.9742637761295438,
+      "selector_blocks": 0.0,
+      "selector_topk_avg": 0.0,
+      "memory_blocks": 0.0,
+      "recurrences": 1.0,
+      "novelty": 0.0,
+      "params": 55876796.0,
+      "kv_bytes_per_token": 3328,
+      "throughput_proxy": 59.604644775390625,
+      "ppl_code": 40879.1640625,
+      "ppl_train": 33432.69921875,
+      "ppl_eval": 40879.1640625,
+      "ppl_math": 40879.1640625,
+      "throughput": 8.055956332275688,
+      "ram": 0.10407864302396774,
+      "long_recall": 0.0,
+      "long_recall_proxy": 0.125,
+      "router_entropy": 0.0,
+      "router_lb": 0.0,
+      "router_load_max": 0.0,
+      "router_load_min": 0.0,
+      "router_load_cv": 0.0,
+      "capacity_overflow": 0.0,
+      "max_grad_norm": 64.53163146972656,
+      "instability": 64.53163146972656,
+      "stop_reason_code": 1.0,
+      "nan_seen": 0.0,
+      "loss_spike": 0.35723876953125,
+      "passkey_acc": 0.0,
+      "passkey_loss": 9.124889373779297,
+      "ppl_code_rec_1": 24357.30078125,
+      "ppl_code_rec_2": 24849.50390625,
+      "ppl_code_rec_4": 33432.69921875,
+      "ppl_code_rec_8": 30068.33203125,
+      "recurrence_gain": -5711.03125,
+      "prior_distance": 0.31869504844093444,
+      "longctx_score": 59164.87021890603,
+      "ppl_per_long_recall": 40879164.0625,
+      "ppl_per_param": 0.0007315946329939892,
+      "ppl_per_throughput": 5074.40238953632
+    },
+    "spec": {
+      "model": {
+        "name": "m4-longctx-overnight-seed",
+        "emb": {
+          "dim": 512,
+          "vocab": 50257,
+          "rope": null,
+          "dropout": 0.0,
+          "init_std": 0.02
+        },
+        "blocks": [
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2251,
+              "activation": "silu",
+              "dropout": 0.0
+            },
+            "ssm": {
+              "kind": "mamba2",
+              "d_state": 16,
+              "d_conv": 4,
+              "dt_rank": 8,
+              "chunk": 128,
+              "gate": 0.1
+            },
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 8,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "LINEAR",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          }
+        ],
+        "head": {
+          "tie_embeddings": true,
+          "vocab": 50257
+        },
+        "norm": "rmsnorm",
+        "recurrences": [
+          {
+            "start": 2,
+            "end": 3,
+            "adapter": "linear",
+            "adapter_dim": null,
+            "concat_prelude": true,
+            "init_state": "noise",
+            "noise_std": 0.010344693882427074,
+            "train_recurrence": 1,
+            "max_train_recurrence": 6,
+            "curriculum_fraction": 0.26652549750157967,
+            "test_recurrences": [
+              1,
+              2,
+              4,
+              8
+            ]
+          }
+        ]
+      },
+      "train": {
+        "lr": 0.0008,
+        "warmup": 500,
+        "clip": 1.0,
+        "bf16": true,
+        "grad_checkpoint": true,
+        "max_tokens": 600000,
+        "weight_decay": 0.02,
+        "seed": 4242,
+        "router_lb_coeff": 0.01,
+        "router_entropy_coeff": 0.005,
+        "entropy_threshold": 0.5,
+        "entropy_patience": 3,
+        "instability_threshold": 50.0,
+        "no_improve_patience": 40,
+        "improvement_tolerance": 0.001,
+        "ppl_stop_threshold": null,
+        "init_checkpoint": null,
+        "passkey_eval_steps": 6,
+        "passkey_eval_batches": 4,
+        "passkey_eval_seq_len": 2048,
+        "passkey_eval_min_distance": 1536,
+        "passkey_eval_lr": 0.001,
+        "passkey_eval_batch_size": 1,
+        "passkey_eval_vocab_limit": 256,
+        "optimizer": {
+          "name": "adamw",
+          "lr": null,
+          "betas": null,
+          "eps": null,
+          "weight_decay": null
+        }
+      },
+      "data": {
+        "tokenizer": "gpt2",
+        "hf_revision": "main",
+        "seq_len": 512,
+        "batch_size": 1,
+        "workers": 0,
+        "shards": [
+          {
+            "name": "ag_news",
+            "split": "train",
+            "weight": 0.25,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "wikitext",
+            "split": "wikitext-2-raw-v1",
+            "weight": 0.35,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "mbpp",
+            "split": "train",
+            "weight": 0.4,
+            "cache_path": null,
+            "revision": null
+          }
+        ],
+        "eval_shards": [
+          {
+            "name": "ag_news",
+            "split": "test",
+            "weight": 1.0,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "wikitext",
+            "split": "wikitext-2-raw-v1:test",
+            "weight": 1.0,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "mbpp",
+            "split": "test",
+            "weight": 1.0,
+            "cache_path": null,
+            "revision": null
+          }
+        ],
+        "eval_tokens": 16384,
+        "healing_shards": [],
+        "healing_tokens": null
+      },
+      "evolution": {
+        "rung0_thresholds": {
+          "max_params": 150000000.0,
+          "max_kv_bytes_per_token": 4500.0,
+          "min_throughput_proxy": 5.0,
+          "gate_entropy_min": 0.0,
+          "gate_entropy_max": 4.0
+        },
+        "rung1_tokens": 200000,
+        "rung2_tokens": 600000,
+        "population": 24,
+        "topk_keep": 0.45,
+        "crossover_prob": 0.4,
+        "parent_selection": "map_elites",
+        "pareto_objectives": [
+          "ppl_code",
+          "ppl_math",
+          "long_recall",
+          "throughput",
+          "ram"
+        ],
+        "objectives": {
+          "ppl_code": "min",
+          "passkey_loss": "min",
+          "throughput": "max",
+          "ram": "min"
+        },
+        "composite_metrics": [
+          {
+            "name": "longctx_score",
+            "op": "weighted_sum",
+            "numerator": null,
+            "denominator": null,
+            "terms": {
+              "ppl_code": 1.0,
+              "passkey_loss": 2000.0,
+              "ram": 500.0,
+              "throughput": -2.0
+            },
+            "epsilon": 1e-06
+          }
+        ],
+        "promotion_prob": 0.0,
+        "promotion_min_layers": 0,
+        "promotion_min_moe_blocks": 0,
+        "promotion_steps_multiplier": 1.0,
+        "promotion_tokens_multiplier": 1.0,
+        "promotion_min_router_entropy": 0.0,
+        "promotion_min_recurrence_gain": 0.0,
+        "promotion_max_instability": null,
+        "archive_max_elites": 48,
+        "adaptive_mutation": true,
+        "adaptive_mutation_eta": 0.1,
+        "adaptive_mutation_min_weight": 0.05,
+        "adaptive_mutation_max_weight": 5.0,
+        "weight_inheritance": "parent"
+      },
+      "priors": {
+        "tokens_per_param": 4.0,
+        "window_scale": 6.0,
+        "rope_theta_default": 10000.0,
+        "prior_weight": 0.0,
+        "compute_penalty_weight": 0.0
+      }
+    }
+  },
+  {
+    "id": "tune_ffn_width_activation+shift_moe-24-b46b",
+    "parent": "shuffle_block_span+tune_router-22-0f4e",
+    "metrics": {
+      "layers": 8.0,
+      "moe_blocks": 0.0,
+      "graph_entropy": 1.4683347464017316,
+      "selector_blocks": 0.0,
+      "selector_topk_avg": 0.0,
+      "memory_blocks": 0.0,
+      "recurrences": 0.0,
+      "novelty": 0.0,
+      "params": 55628283.0,
+      "kv_bytes_per_token": 4096,
+      "throughput_proxy": 59.604644775390625,
+      "ppl_code": 48330.59375,
+      "ppl_train": 42843.85546875,
+      "ppl_eval": 48330.59375,
+      "ppl_math": 48330.59375,
+      "throughput": 6.7555208999176015,
+      "ram": 0.10361575148999691,
+      "long_recall": 0.0,
+      "long_recall_proxy": 0.0,
+      "router_entropy": 0.0,
+      "router_lb": 0.0,
+      "router_load_max": 0.0,
+      "router_load_min": 0.0,
+      "router_load_cv": 0.0,
+      "capacity_overflow": 0.0,
+      "max_grad_norm": 68.92383575439453,
+      "instability": 68.92383575439453,
+      "stop_reason_code": 1.0,
+      "nan_seen": 0.0,
+      "loss_spike": 0.0,
+      "passkey_acc": 0.0,
+      "passkey_loss": 9.241617202758789,
+      "prior_distance": 0.2630004718437205,
+      "longctx_score": 66852.12498946274,
+      "ppl_per_long_recall": 48330593.75,
+      "ppl_per_param": 0.0008688133291836457,
+      "ppl_per_throughput": 7154.236433579756
+    },
+    "spec": {
+      "model": {
+        "name": "m4-longctx-overnight-seed",
+        "emb": {
+          "dim": 512,
+          "vocab": 50257,
+          "rope": null,
+          "dropout": 0.0,
+          "init_std": 0.02
+        },
+        "blocks": [
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2474,
+              "activation": "relu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          }
+        ],
+        "head": {
+          "tie_embeddings": true,
+          "vocab": 50257
+        },
+        "norm": "rmsnorm",
+        "recurrences": []
+      },
+      "train": {
+        "lr": 0.0008,
+        "warmup": 500,
+        "clip": 1.0,
+        "bf16": true,
+        "grad_checkpoint": true,
+        "max_tokens": 600000,
+        "weight_decay": 0.02,
+        "seed": 4242,
+        "router_lb_coeff": 0.01,
+        "router_entropy_coeff": 0.005,
+        "entropy_threshold": 0.5,
+        "entropy_patience": 3,
+        "instability_threshold": 50.0,
+        "no_improve_patience": 40,
+        "improvement_tolerance": 0.001,
+        "ppl_stop_threshold": null,
+        "init_checkpoint": null,
+        "passkey_eval_steps": 6,
+        "passkey_eval_batches": 4,
+        "passkey_eval_seq_len": 2048,
+        "passkey_eval_min_distance": 1536,
+        "passkey_eval_lr": 0.001,
+        "passkey_eval_batch_size": 1,
+        "passkey_eval_vocab_limit": 256,
+        "optimizer": {
+          "name": "adamw",
+          "lr": null,
+          "betas": null,
+          "eps": null,
+          "weight_decay": null
+        }
+      },
+      "data": {
+        "tokenizer": "gpt2",
+        "hf_revision": "main",
+        "seq_len": 512,
+        "batch_size": 1,
+        "workers": 0,
+        "shards": [
+          {
+            "name": "ag_news",
+            "split": "train",
+            "weight": 0.25,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "wikitext",
+            "split": "wikitext-2-raw-v1",
+            "weight": 0.35,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "mbpp",
+            "split": "train",
+            "weight": 0.4,
+            "cache_path": null,
+            "revision": null
+          }
+        ],
+        "eval_shards": [
+          {
+            "name": "ag_news",
+            "split": "test",
+            "weight": 1.0,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "wikitext",
+            "split": "wikitext-2-raw-v1:test",
+            "weight": 1.0,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "mbpp",
+            "split": "test",
+            "weight": 1.0,
+            "cache_path": null,
+            "revision": null
+          }
+        ],
+        "eval_tokens": 16384,
+        "healing_shards": [],
+        "healing_tokens": null
+      },
+      "evolution": {
+        "rung0_thresholds": {
+          "max_params": 150000000.0,
+          "max_kv_bytes_per_token": 4500.0,
+          "min_throughput_proxy": 5.0,
+          "gate_entropy_min": 0.0,
+          "gate_entropy_max": 4.0
+        },
+        "rung1_tokens": 200000,
+        "rung2_tokens": 600000,
+        "population": 24,
+        "topk_keep": 0.45,
+        "crossover_prob": 0.4,
+        "parent_selection": "map_elites",
+        "pareto_objectives": [
+          "ppl_code",
+          "ppl_math",
+          "long_recall",
+          "throughput",
+          "ram"
+        ],
+        "objectives": {
+          "ppl_code": "min",
+          "passkey_loss": "min",
+          "throughput": "max",
+          "ram": "min"
+        },
+        "composite_metrics": [
+          {
+            "name": "longctx_score",
+            "op": "weighted_sum",
+            "numerator": null,
+            "denominator": null,
+            "terms": {
+              "ppl_code": 1.0,
+              "passkey_loss": 2000.0,
+              "ram": 500.0,
+              "throughput": -2.0
+            },
+            "epsilon": 1e-06
+          }
+        ],
+        "promotion_prob": 0.0,
+        "promotion_min_layers": 0,
+        "promotion_min_moe_blocks": 0,
+        "promotion_steps_multiplier": 1.0,
+        "promotion_tokens_multiplier": 1.0,
+        "promotion_min_router_entropy": 0.0,
+        "promotion_min_recurrence_gain": 0.0,
+        "promotion_max_instability": null,
+        "archive_max_elites": 48,
+        "adaptive_mutation": true,
+        "adaptive_mutation_eta": 0.1,
+        "adaptive_mutation_min_weight": 0.05,
+        "adaptive_mutation_max_weight": 5.0,
+        "weight_inheritance": "parent"
+      },
+      "priors": {
+        "tokens_per_param": 4.0,
+        "window_scale": 6.0,
+        "rope_theta_default": 10000.0,
+        "prior_weight": 0.0,
+        "compute_penalty_weight": 0.0
+      }
+    }
+  },
+  {
+    "id": "insert_chunk_memory+tune_layer_scale-30-29eb",
+    "parent": "tune_ffn_width_activation+shift_moe-24-b46b",
+    "metrics": {
+      "layers": 8.0,
+      "moe_blocks": 0.0,
+      "graph_entropy": 1.808334495742948,
+      "selector_blocks": 0.0,
+      "selector_topk_avg": 0.0,
+      "memory_blocks": 1.0,
+      "recurrences": 0.0,
+      "novelty": 0.125,
+      "params": 55760571.0,
+      "kv_bytes_per_token": 4096,
+      "throughput_proxy": 59.604644775390625,
+      "ppl_code": 49340.35546875,
+      "ppl_train": 49088.12890625,
+      "ppl_eval": 49340.35546875,
+      "ppl_math": 49340.35546875,
+      "throughput": 3.5874307093865525,
+      "ram": 0.10386215709149837,
+      "long_recall": 0.0,
+      "long_recall_proxy": 0.325,
+      "router_entropy": 0.0,
+      "router_lb": 0.0,
+      "router_load_max": 0.0,
+      "router_load_min": 0.0,
+      "router_load_cv": 0.0,
+      "capacity_overflow": 0.0,
+      "max_grad_norm": 63.98838424682617,
+      "instability": 63.98838424682617,
+      "stop_reason_code": 1.0,
+      "nan_seen": 0.0,
+      "loss_spike": 0.0,
+      "passkey_acc": 0.0,
+      "passkey_loss": 9.176237344741821,
+      "prior_distance": 0.2630004718437205,
+      "longctx_score": 67737.58637536062,
+      "ppl_per_long_recall": 49340355.46875,
+      "ppl_per_param": 0.0008848610152996819,
+      "ppl_per_throughput": 13753.67483465267
+    },
+    "spec": {
+      "model": {
+        "name": "m4-longctx-overnight-seed",
+        "emb": {
+          "dim": 512,
+          "vocab": 50257,
+          "rope": null,
+          "dropout": 0.0,
+          "init_std": 0.02
+        },
+        "blocks": [
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": [
+              {
+                "type": "layer_scale",
+                "targets": [
+                  "ffn"
+                ],
+                "init": 0.001,
+                "learnable": true
+              }
+            ]
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": [
+              {
+                "type": "chunk_memory",
+                "chunk_size": 256,
+                "stride": 128,
+                "heads": 1,
+                "head_dim": 64,
+                "dropout": 0.1,
+                "gating_weight": 0.1610777997899543
+              }
+            ]
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2474,
+              "activation": "relu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          }
+        ],
+        "head": {
+          "tie_embeddings": true,
+          "vocab": 50257
+        },
+        "norm": "rmsnorm",
+        "recurrences": []
+      },
+      "train": {
+        "lr": 0.0008,
+        "warmup": 500,
+        "clip": 1.0,
+        "bf16": true,
+        "grad_checkpoint": true,
+        "max_tokens": 600000,
+        "weight_decay": 0.02,
+        "seed": 4242,
+        "router_lb_coeff": 0.01,
+        "router_entropy_coeff": 0.005,
+        "entropy_threshold": 0.5,
+        "entropy_patience": 3,
+        "instability_threshold": 50.0,
+        "no_improve_patience": 40,
+        "improvement_tolerance": 0.001,
+        "ppl_stop_threshold": null,
+        "init_checkpoint": null,
+        "passkey_eval_steps": 6,
+        "passkey_eval_batches": 4,
+        "passkey_eval_seq_len": 2048,
+        "passkey_eval_min_distance": 1536,
+        "passkey_eval_lr": 0.001,
+        "passkey_eval_batch_size": 1,
+        "passkey_eval_vocab_limit": 256,
+        "optimizer": {
+          "name": "adamw",
+          "lr": null,
+          "betas": null,
+          "eps": null,
+          "weight_decay": null
+        }
+      },
+      "data": {
+        "tokenizer": "gpt2",
+        "hf_revision": "main",
+        "seq_len": 512,
+        "batch_size": 1,
+        "workers": 0,
+        "shards": [
+          {
+            "name": "ag_news",
+            "split": "train",
+            "weight": 0.25,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "wikitext",
+            "split": "wikitext-2-raw-v1",
+            "weight": 0.35,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "mbpp",
+            "split": "train",
+            "weight": 0.4,
+            "cache_path": null,
+            "revision": null
+          }
+        ],
+        "eval_shards": [
+          {
+            "name": "ag_news",
+            "split": "test",
+            "weight": 1.0,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "wikitext",
+            "split": "wikitext-2-raw-v1:test",
+            "weight": 1.0,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "mbpp",
+            "split": "test",
+            "weight": 1.0,
+            "cache_path": null,
+            "revision": null
+          }
+        ],
+        "eval_tokens": 16384,
+        "healing_shards": [],
+        "healing_tokens": null
+      },
+      "evolution": {
+        "rung0_thresholds": {
+          "max_params": 150000000.0,
+          "max_kv_bytes_per_token": 4500.0,
+          "min_throughput_proxy": 5.0,
+          "gate_entropy_min": 0.0,
+          "gate_entropy_max": 4.0
+        },
+        "rung1_tokens": 200000,
+        "rung2_tokens": 600000,
+        "population": 24,
+        "topk_keep": 0.45,
+        "crossover_prob": 0.4,
+        "parent_selection": "map_elites",
+        "pareto_objectives": [
+          "ppl_code",
+          "ppl_math",
+          "long_recall",
+          "throughput",
+          "ram"
+        ],
+        "objectives": {
+          "ppl_code": "min",
+          "passkey_loss": "min",
+          "throughput": "max",
+          "ram": "min"
+        },
+        "composite_metrics": [
+          {
+            "name": "longctx_score",
+            "op": "weighted_sum",
+            "numerator": null,
+            "denominator": null,
+            "terms": {
+              "ppl_code": 1.0,
+              "passkey_loss": 2000.0,
+              "ram": 500.0,
+              "throughput": -2.0
+            },
+            "epsilon": 1e-06
+          }
+        ],
+        "promotion_prob": 0.0,
+        "promotion_min_layers": 0,
+        "promotion_min_moe_blocks": 0,
+        "promotion_steps_multiplier": 1.0,
+        "promotion_tokens_multiplier": 1.0,
+        "promotion_min_router_entropy": 0.0,
+        "promotion_min_recurrence_gain": 0.0,
+        "promotion_max_instability": null,
+        "archive_max_elites": 48,
+        "adaptive_mutation": true,
+        "adaptive_mutation_eta": 0.1,
+        "adaptive_mutation_min_weight": 0.05,
+        "adaptive_mutation_max_weight": 5.0,
+        "weight_inheritance": "parent"
+      },
+      "priors": {
+        "tokens_per_param": 4.0,
+        "window_scale": 6.0,
+        "rope_theta_default": 10000.0,
+        "prior_weight": 0.0,
+        "compute_penalty_weight": 0.0
+      }
+    }
+  },
+  {
+    "id": "xover-76-7626",
+    "parent": null,
+    "metrics": {
+      "layers": 2.0,
+      "moe_blocks": 0.0,
+      "graph_entropy": 1.3584735175349205,
+      "selector_blocks": 0.0,
+      "selector_topk_avg": 0.0,
+      "memory_blocks": 0.0,
+      "recurrences": 0.0,
+      "novelty": 1.2,
+      "params": 33397329.0,
+      "kv_bytes_per_token": 1024,
+      "throughput_proxy": 953.67431640625,
+      "ppl_code": 1553.70947265625,
+      "ppl_train": 205.6539306640625,
+      "ppl_eval": 1553.70947265625,
+      "ppl_math": 1553.70947265625,
+      "throughput": 181.4924181552362,
+      "ram": 0.06220737285912037,
+      "long_recall": 0.0,
+      "long_recall_proxy": 0.0,
+      "router_entropy": 0.0,
+      "router_lb": 0.0,
+      "router_load_max": 0.0,
+      "router_load_min": 0.0,
+      "router_load_cv": 0.0,
+      "capacity_overflow": 0.0,
+      "max_grad_norm": 60.635257720947266,
+      "instability": 60.635257720947266,
+      "stop_reason_code": 1.0,
+      "nan_seen": 0.0,
+      "loss_spike": 8.488288760185242,
+      "passkey_acc": 0.0,
+      "passkey_loss": 9.524794340133667,
+      "prior_distance": 0.24999993750001562,
+      "longctx_score": 20271.417003042672,
+      "ppl_per_long_recall": 1553709.47265625,
+      "ppl_per_param": 4.652196804888948e-05,
+      "ppl_per_throughput": 8.560740379398732
+    },
+    "spec": {
+      "model": {
+        "name": "m4-longctx-overnight-seed",
+        "emb": {
+          "dim": 512,
+          "vocab": 50257,
+          "rope": null,
+          "dropout": 0.0,
+          "init_std": 0.02
+        },
+        "blocks": [
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          }
+        ],
+        "head": {
+          "tie_embeddings": true,
+          "vocab": 50257
+        },
+        "norm": "rmsnorm",
+        "recurrences": []
+      },
+      "train": {
+        "lr": 0.0008,
+        "warmup": 500,
+        "clip": 1.0,
+        "bf16": true,
+        "grad_checkpoint": true,
+        "max_tokens": 600000,
+        "weight_decay": 0.02,
+        "seed": 4242,
+        "router_lb_coeff": 0.01,
+        "router_entropy_coeff": 0.005,
+        "entropy_threshold": 0.5,
+        "entropy_patience": 3,
+        "instability_threshold": 50.0,
+        "no_improve_patience": 40,
+        "improvement_tolerance": 0.001,
+        "ppl_stop_threshold": null,
+        "init_checkpoint": null,
+        "passkey_eval_steps": 6,
+        "passkey_eval_batches": 4,
+        "passkey_eval_seq_len": 2048,
+        "passkey_eval_min_distance": 1536,
+        "passkey_eval_lr": 0.001,
+        "passkey_eval_batch_size": 1,
+        "passkey_eval_vocab_limit": 256,
+        "optimizer": {
+          "name": "adamw",
+          "lr": null,
+          "betas": null,
+          "eps": null,
+          "weight_decay": null
+        }
+      },
+      "data": {
+        "tokenizer": "gpt2",
+        "hf_revision": "main",
+        "seq_len": 512,
+        "batch_size": 1,
+        "workers": 0,
+        "shards": [
+          {
+            "name": "ag_news",
+            "split": "train",
+            "weight": 0.25,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "wikitext",
+            "split": "wikitext-2-raw-v1",
+            "weight": 0.35,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "mbpp",
+            "split": "train",
+            "weight": 0.4,
+            "cache_path": null,
+            "revision": null
+          }
+        ],
+        "eval_shards": [
+          {
+            "name": "ag_news",
+            "split": "test",
+            "weight": 1.0,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "wikitext",
+            "split": "wikitext-2-raw-v1:test",
+            "weight": 1.0,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "mbpp",
+            "split": "test",
+            "weight": 1.0,
+            "cache_path": null,
+            "revision": null
+          }
+        ],
+        "eval_tokens": 16384,
+        "healing_shards": [],
+        "healing_tokens": null
+      },
+      "evolution": {
+        "rung0_thresholds": {
+          "max_params": 150000000.0,
+          "max_kv_bytes_per_token": 4500.0,
+          "min_throughput_proxy": 5.0,
+          "gate_entropy_min": 0.0,
+          "gate_entropy_max": 4.0
+        },
+        "rung1_tokens": 200000,
+        "rung2_tokens": 600000,
+        "population": 24,
+        "topk_keep": 0.45,
+        "crossover_prob": 0.4,
+        "parent_selection": "map_elites",
+        "pareto_objectives": [
+          "ppl_code",
+          "ppl_math",
+          "long_recall",
+          "throughput",
+          "ram"
+        ],
+        "objectives": {
+          "ppl_code": "min",
+          "passkey_loss": "min",
+          "throughput": "max",
+          "ram": "min"
+        },
+        "composite_metrics": [
+          {
+            "name": "longctx_score",
+            "op": "weighted_sum",
+            "numerator": null,
+            "denominator": null,
+            "terms": {
+              "ppl_code": 1.0,
+              "passkey_loss": 2000.0,
+              "ram": 500.0,
+              "throughput": -2.0
+            },
+            "epsilon": 1e-06
+          }
+        ],
+        "promotion_prob": 0.0,
+        "promotion_min_layers": 0,
+        "promotion_min_moe_blocks": 0,
+        "promotion_steps_multiplier": 1.0,
+        "promotion_tokens_multiplier": 1.0,
+        "promotion_min_router_entropy": 0.0,
+        "promotion_min_recurrence_gain": 0.0,
+        "promotion_max_instability": null,
+        "archive_max_elites": 48,
+        "adaptive_mutation": true,
+        "adaptive_mutation_eta": 0.1,
+        "adaptive_mutation_min_weight": 0.05,
+        "adaptive_mutation_max_weight": 5.0,
+        "weight_inheritance": "parent"
+      },
+      "priors": {
+        "tokens_per_param": 4.0,
+        "window_scale": 6.0,
+        "rope_theta_default": 10000.0,
+        "prior_weight": 0.0,
+        "compute_penalty_weight": 0.0
+      }
+    }
+  },
+  {
+    "id": "toggle_linear_attention+add_extra_combo-110-07fb",
+    "parent": "xover-35-c78f",
+    "metrics": {
+      "layers": 3.0,
+      "moe_blocks": 0.0,
+      "graph_entropy": 2.1112548822623096,
+      "selector_blocks": 0.0,
+      "selector_topk_avg": 0.0,
+      "memory_blocks": 1.0,
+      "recurrences": 0.0,
+      "novelty": 0.3333333333333333,
+      "params": 37204819.0,
+      "kv_bytes_per_token": 1024,
+      "throughput_proxy": 423.8552517361111,
+      "ppl_code": 807.2774658203125,
+      "ppl_train": 256.6206359863281,
+      "ppl_eval": 807.2774658203125,
+      "ppl_math": 807.2774658203125,
+      "throughput": 0.0,
+      "ram": 0.06929937563836575,
+      "long_recall": 0.0,
+      "long_recall_proxy": 0.5333333333333333,
+      "router_entropy": 0.0,
+      "router_lb": 0.0,
+      "router_load_max": 0.0,
+      "router_load_min": 0.0,
+      "router_load_cv": 0.0,
+      "capacity_overflow": 0.0,
+      "max_grad_norm": 80.66776275634766,
+      "instability": 80.66776275634766,
+      "stop_reason_code": 1.0,
+      "nan_seen": 0.0,
+      "loss_spike": 0.0,
+      "passkey_acc": 0.0,
+      "passkey_loss": 9.123922348022461,
+      "prior_distance": 0.24999995833334027,
+      "longctx_score": 19089.771849684417,
+      "ppl_per_long_recall": 807277.4658203125,
+      "ppl_per_param": 2.1698196296031236e-05,
+      "ppl_per_throughput": 807277465.8203125
+    },
+    "spec": {
+      "model": {
+        "name": "m4-longctx-overnight-seed",
+        "emb": {
+          "dim": 512,
+          "vocab": 50257,
+          "rope": null,
+          "dropout": 0.0,
+          "init_std": 0.02
+        },
+        "blocks": [
+          {
+            "name": null,
+            "attn": {
+              "kind": "LINEAR",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": [
+              {
+                "type": "retro",
+                "memory_tokens": 512,
+                "stride": 128,
+                "aggregator": "mean",
+                "gating_weight": 0.19203825474256886
+              },
+              {
+                "type": "gated",
+                "targets": [
+                  "attn",
+                  "ffn"
+                ],
+                "init_weight": 0.08398511478583194,
+                "learnable": true
+              }
+            ]
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          }
+        ],
+        "head": {
+          "tie_embeddings": true,
+          "vocab": 50257
+        },
+        "norm": "rmsnorm",
+        "recurrences": []
+      },
+      "train": {
+        "lr": 0.0008,
+        "warmup": 500,
+        "clip": 1.0,
+        "bf16": true,
+        "grad_checkpoint": true,
+        "max_tokens": 600000,
+        "weight_decay": 0.02,
+        "seed": 4242,
+        "router_lb_coeff": 0.01,
+        "router_entropy_coeff": 0.005,
+        "entropy_threshold": 0.5,
+        "entropy_patience": 3,
+        "instability_threshold": 50.0,
+        "no_improve_patience": 40,
+        "improvement_tolerance": 0.001,
+        "ppl_stop_threshold": null,
+        "init_checkpoint": null,
+        "passkey_eval_steps": 6,
+        "passkey_eval_batches": 4,
+        "passkey_eval_seq_len": 2048,
+        "passkey_eval_min_distance": 1536,
+        "passkey_eval_lr": 0.001,
+        "passkey_eval_batch_size": 1,
+        "passkey_eval_vocab_limit": 256,
+        "optimizer": {
+          "name": "adamw",
+          "lr": null,
+          "betas": null,
+          "eps": null,
+          "weight_decay": null
+        }
+      },
+      "data": {
+        "tokenizer": "gpt2",
+        "hf_revision": "main",
+        "seq_len": 512,
+        "batch_size": 1,
+        "workers": 0,
+        "shards": [
+          {
+            "name": "ag_news",
+            "split": "train",
+            "weight": 0.25,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "wikitext",
+            "split": "wikitext-2-raw-v1",
+            "weight": 0.35,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "mbpp",
+            "split": "train",
+            "weight": 0.4,
+            "cache_path": null,
+            "revision": null
+          }
+        ],
+        "eval_shards": [
+          {
+            "name": "ag_news",
+            "split": "test",
+            "weight": 1.0,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "wikitext",
+            "split": "wikitext-2-raw-v1:test",
+            "weight": 1.0,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "mbpp",
+            "split": "test",
+            "weight": 1.0,
+            "cache_path": null,
+            "revision": null
+          }
+        ],
+        "eval_tokens": 16384,
+        "healing_shards": [],
+        "healing_tokens": null
+      },
+      "evolution": {
+        "rung0_thresholds": {
+          "max_params": 150000000.0,
+          "max_kv_bytes_per_token": 4500.0,
+          "min_throughput_proxy": 5.0,
+          "gate_entropy_min": 0.0,
+          "gate_entropy_max": 4.0
+        },
+        "rung1_tokens": 200000,
+        "rung2_tokens": 600000,
+        "population": 24,
+        "topk_keep": 0.45,
+        "crossover_prob": 0.4,
+        "parent_selection": "map_elites",
+        "pareto_objectives": [
+          "ppl_code",
+          "ppl_math",
+          "long_recall",
+          "throughput",
+          "ram"
+        ],
+        "objectives": {
+          "ppl_code": "min",
+          "passkey_loss": "min",
+          "throughput": "max",
+          "ram": "min"
+        },
+        "composite_metrics": [
+          {
+            "name": "longctx_score",
+            "op": "weighted_sum",
+            "numerator": null,
+            "denominator": null,
+            "terms": {
+              "ppl_code": 1.0,
+              "passkey_loss": 2000.0,
+              "ram": 500.0,
+              "throughput": -2.0
+            },
+            "epsilon": 1e-06
+          }
+        ],
+        "promotion_prob": 0.0,
+        "promotion_min_layers": 0,
+        "promotion_min_moe_blocks": 0,
+        "promotion_steps_multiplier": 1.0,
+        "promotion_tokens_multiplier": 1.0,
+        "promotion_min_router_entropy": 0.0,
+        "promotion_min_recurrence_gain": 0.0,
+        "promotion_max_instability": null,
+        "archive_max_elites": 48,
+        "adaptive_mutation": true,
+        "adaptive_mutation_eta": 0.1,
+        "adaptive_mutation_min_weight": 0.05,
+        "adaptive_mutation_max_weight": 5.0,
+        "weight_inheritance": "parent"
+      },
+      "priors": {
+        "tokens_per_param": 4.0,
+        "window_scale": 6.0,
+        "rope_theta_default": 10000.0,
+        "prior_weight": 0.0,
+        "compute_penalty_weight": 0.0
+      }
+    }
+  },
+  {
+    "id": "tune_layer_scale+tune_attn_shape-132-a2be",
+    "parent": "xover-76-7626",
+    "metrics": {
+      "layers": 2.0,
+      "moe_blocks": 0.0,
+      "graph_entropy": 1.661645223156457,
+      "selector_blocks": 0.0,
+      "selector_topk_avg": 0.0,
+      "memory_blocks": 0.0,
+      "recurrences": 0.0,
+      "novelty": 1.4,
+      "params": 33792337.0,
+      "kv_bytes_per_token": 2560,
+      "throughput_proxy": 953.67431640625,
+      "ppl_code": 153.95167541503906,
+      "ppl_train": 86.37236022949219,
+      "ppl_eval": 153.95167541503906,
+      "ppl_math": 153.95167541503906,
+      "throughput": 255.2948359264033,
+      "ram": 0.06294313259422779,
+      "long_recall": 0.0,
+      "long_recall_proxy": 0.1,
+      "router_entropy": 0.0,
+      "router_lb": 0.0,
+      "router_load_max": 0.0,
+      "router_load_min": 0.0,
+      "router_load_cv": 0.0,
+      "capacity_overflow": 0.0,
+      "max_grad_norm": 6.555426120758057,
+      "instability": 6.555426120758057,
+      "stop_reason_code": 3.0,
+      "nan_seen": 0.0,
+      "loss_spike": 9.928284764289856,
+      "passkey_acc": 0.0,
+      "passkey_loss": 9.244209289550781,
+      "prior_distance": 0.18749995312501172,
+      "longctx_score": 18163.25214896091,
+      "ppl_per_long_recall": 153951.67541503906,
+      "ppl_per_param": 4.555816172614491e-06,
+      "ppl_per_throughput": 0.6030348199421489
+    },
+    "spec": {
+      "model": {
+        "name": "m4-longctx-overnight-seed",
+        "emb": {
+          "dim": 512,
+          "vocab": 50257,
+          "rope": null,
+          "dropout": 0.0,
+          "init_std": 0.02
+        },
+        "blocks": [
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 1,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": [
+              {
+                "type": "layer_scale",
+                "targets": [
+                  "attn",
+                  "ffn"
+                ],
+                "init": 1e-05,
+                "learnable": true
+              }
+            ]
+          }
+        ],
+        "head": {
+          "tie_embeddings": true,
+          "vocab": 50257
+        },
+        "norm": "rmsnorm",
+        "recurrences": []
+      },
+      "train": {
+        "lr": 0.0008,
+        "warmup": 500,
+        "clip": 1.0,
+        "bf16": true,
+        "grad_checkpoint": true,
+        "max_tokens": 600000,
+        "weight_decay": 0.02,
+        "seed": 4242,
+        "router_lb_coeff": 0.01,
+        "router_entropy_coeff": 0.005,
+        "entropy_threshold": 0.5,
+        "entropy_patience": 3,
+        "instability_threshold": 50.0,
+        "no_improve_patience": 40,
+        "improvement_tolerance": 0.001,
+        "ppl_stop_threshold": null,
+        "init_checkpoint": null,
+        "passkey_eval_steps": 6,
+        "passkey_eval_batches": 4,
+        "passkey_eval_seq_len": 2048,
+        "passkey_eval_min_distance": 1536,
+        "passkey_eval_lr": 0.001,
+        "passkey_eval_batch_size": 1,
+        "passkey_eval_vocab_limit": 256,
+        "optimizer": {
+          "name": "adamw",
+          "lr": null,
+          "betas": null,
+          "eps": null,
+          "weight_decay": null
+        }
+      },
+      "data": {
+        "tokenizer": "gpt2",
+        "hf_revision": "main",
+        "seq_len": 512,
+        "batch_size": 1,
+        "workers": 0,
+        "shards": [
+          {
+            "name": "ag_news",
+            "split": "train",
+            "weight": 0.25,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "wikitext",
+            "split": "wikitext-2-raw-v1",
+            "weight": 0.35,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "mbpp",
+            "split": "train",
+            "weight": 0.4,
+            "cache_path": null,
+            "revision": null
+          }
+        ],
+        "eval_shards": [
+          {
+            "name": "ag_news",
+            "split": "test",
+            "weight": 1.0,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "wikitext",
+            "split": "wikitext-2-raw-v1:test",
+            "weight": 1.0,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "mbpp",
+            "split": "test",
+            "weight": 1.0,
+            "cache_path": null,
+            "revision": null
+          }
+        ],
+        "eval_tokens": 16384,
+        "healing_shards": [],
+        "healing_tokens": null
+      },
+      "evolution": {
+        "rung0_thresholds": {
+          "max_params": 150000000.0,
+          "max_kv_bytes_per_token": 4500.0,
+          "min_throughput_proxy": 5.0,
+          "gate_entropy_min": 0.0,
+          "gate_entropy_max": 4.0
+        },
+        "rung1_tokens": 200000,
+        "rung2_tokens": 600000,
+        "population": 24,
+        "topk_keep": 0.45,
+        "crossover_prob": 0.4,
+        "parent_selection": "map_elites",
+        "pareto_objectives": [
+          "ppl_code",
+          "ppl_math",
+          "long_recall",
+          "throughput",
+          "ram"
+        ],
+        "objectives": {
+          "ppl_code": "min",
+          "passkey_loss": "min",
+          "throughput": "max",
+          "ram": "min"
+        },
+        "composite_metrics": [
+          {
+            "name": "longctx_score",
+            "op": "weighted_sum",
+            "numerator": null,
+            "denominator": null,
+            "terms": {
+              "ppl_code": 1.0,
+              "passkey_loss": 2000.0,
+              "ram": 500.0,
+              "throughput": -2.0
+            },
+            "epsilon": 1e-06
+          }
+        ],
+        "promotion_prob": 0.0,
+        "promotion_min_layers": 0,
+        "promotion_min_moe_blocks": 0,
+        "promotion_steps_multiplier": 1.0,
+        "promotion_tokens_multiplier": 1.0,
+        "promotion_min_router_entropy": 0.0,
+        "promotion_min_recurrence_gain": 0.0,
+        "promotion_max_instability": null,
+        "archive_max_elites": 48,
+        "adaptive_mutation": true,
+        "adaptive_mutation_eta": 0.1,
+        "adaptive_mutation_min_weight": 0.05,
+        "adaptive_mutation_max_weight": 5.0,
+        "weight_inheritance": "parent"
+      },
+      "priors": {
+        "tokens_per_param": 4.0,
+        "window_scale": 6.0,
+        "rope_theta_default": 10000.0,
+        "prior_weight": 0.0,
+        "compute_penalty_weight": 0.0
+      }
+    }
+  },
+  {
+    "id": "tune_assoc_memory+tune_router-139-9b43",
+    "parent": "xover-35-c78f",
+    "metrics": {
+      "layers": 3.0,
+      "moe_blocks": 0.0,
+      "graph_entropy": 1.652463469304736,
+      "selector_blocks": 0.0,
+      "selector_topk_avg": 0.0,
+      "memory_blocks": 1.0,
+      "recurrences": 0.0,
+      "novelty": 0.16666666666666666,
+      "params": 37467857.0,
+      "kv_bytes_per_token": 1536,
+      "throughput_proxy": 423.8552517361111,
+      "ppl_code": 150.83963012695312,
+      "ppl_train": 34.88540267944336,
+      "ppl_eval": 150.83963012695312,
+      "ppl_math": 150.83963012695312,
+      "throughput": 200.41070440098676,
+      "ram": 0.06978932209312916,
+      "long_recall": 0.0,
+      "long_recall_proxy": 0.43333333333333335,
+      "router_entropy": 0.0,
+      "router_lb": 0.0,
+      "router_load_max": 0.0,
+      "router_load_min": 0.0,
+      "router_load_cv": 0.0,
+      "capacity_overflow": 0.0,
+      "max_grad_norm": 11.155226707458496,
+      "instability": 11.155226707458496,
+      "stop_reason_code": 3.0,
+      "nan_seen": 0.0,
+      "loss_spike": 7.917437904747203,
+      "passkey_acc": 0.0,
+      "passkey_loss": 9.648168087005615,
+      "prior_distance": 0.24999995833334027,
+      "longctx_score": 19081.249056382774,
+      "ppl_per_long_recall": 150839.63012695312,
+      "ppl_per_param": 4.025840872803404e-06,
+      "ppl_per_throughput": 0.7526525620365537
+    },
+    "spec": {
+      "model": {
+        "name": "m4-longctx-overnight-seed",
+        "emb": {
+          "dim": 512,
+          "vocab": 50257,
+          "rope": null,
+          "dropout": 0.0,
+          "init_std": 0.02
+        },
+        "blocks": [
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": [
+              {
+                "type": "assoc_memory",
+                "heads": 4,
+                "head_dim": 32,
+                "feature_map": "elu",
+                "dropout": 0.0,
+                "gating_weight": 0.2682602754390848
+              }
+            ]
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          }
+        ],
+        "head": {
+          "tie_embeddings": true,
+          "vocab": 50257
+        },
+        "norm": "rmsnorm",
+        "recurrences": []
+      },
+      "train": {
+        "lr": 0.0008,
+        "warmup": 500,
+        "clip": 1.0,
+        "bf16": true,
+        "grad_checkpoint": true,
+        "max_tokens": 600000,
+        "weight_decay": 0.02,
+        "seed": 4242,
+        "router_lb_coeff": 0.01,
+        "router_entropy_coeff": 0.005,
+        "entropy_threshold": 0.5,
+        "entropy_patience": 3,
+        "instability_threshold": 50.0,
+        "no_improve_patience": 40,
+        "improvement_tolerance": 0.001,
+        "ppl_stop_threshold": null,
+        "init_checkpoint": null,
+        "passkey_eval_steps": 6,
+        "passkey_eval_batches": 4,
+        "passkey_eval_seq_len": 2048,
+        "passkey_eval_min_distance": 1536,
+        "passkey_eval_lr": 0.001,
+        "passkey_eval_batch_size": 1,
+        "passkey_eval_vocab_limit": 256,
+        "optimizer": {
+          "name": "adamw",
+          "lr": null,
+          "betas": null,
+          "eps": null,
+          "weight_decay": null
+        }
+      },
+      "data": {
+        "tokenizer": "gpt2",
+        "hf_revision": "main",
+        "seq_len": 512,
+        "batch_size": 1,
+        "workers": 0,
+        "shards": [
+          {
+            "name": "ag_news",
+            "split": "train",
+            "weight": 0.25,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "wikitext",
+            "split": "wikitext-2-raw-v1",
+            "weight": 0.35,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "mbpp",
+            "split": "train",
+            "weight": 0.4,
+            "cache_path": null,
+            "revision": null
+          }
+        ],
+        "eval_shards": [
+          {
+            "name": "ag_news",
+            "split": "test",
+            "weight": 1.0,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "wikitext",
+            "split": "wikitext-2-raw-v1:test",
+            "weight": 1.0,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "mbpp",
+            "split": "test",
+            "weight": 1.0,
+            "cache_path": null,
+            "revision": null
+          }
+        ],
+        "eval_tokens": 16384,
+        "healing_shards": [],
+        "healing_tokens": null
+      },
+      "evolution": {
+        "rung0_thresholds": {
+          "max_params": 150000000.0,
+          "max_kv_bytes_per_token": 4500.0,
+          "min_throughput_proxy": 5.0,
+          "gate_entropy_min": 0.0,
+          "gate_entropy_max": 4.0
+        },
+        "rung1_tokens": 200000,
+        "rung2_tokens": 600000,
+        "population": 24,
+        "topk_keep": 0.45,
+        "crossover_prob": 0.4,
+        "parent_selection": "map_elites",
+        "pareto_objectives": [
+          "ppl_code",
+          "ppl_math",
+          "long_recall",
+          "throughput",
+          "ram"
+        ],
+        "objectives": {
+          "ppl_code": "min",
+          "passkey_loss": "min",
+          "throughput": "max",
+          "ram": "min"
+        },
+        "composite_metrics": [
+          {
+            "name": "longctx_score",
+            "op": "weighted_sum",
+            "numerator": null,
+            "denominator": null,
+            "terms": {
+              "ppl_code": 1.0,
+              "passkey_loss": 2000.0,
+              "ram": 500.0,
+              "throughput": -2.0
+            },
+            "epsilon": 1e-06
+          }
+        ],
+        "promotion_prob": 0.0,
+        "promotion_min_layers": 0,
+        "promotion_min_moe_blocks": 0,
+        "promotion_steps_multiplier": 1.0,
+        "promotion_tokens_multiplier": 1.0,
+        "promotion_min_router_entropy": 0.0,
+        "promotion_min_recurrence_gain": 0.0,
+        "promotion_max_instability": null,
+        "archive_max_elites": 48,
+        "adaptive_mutation": true,
+        "adaptive_mutation_eta": 0.1,
+        "adaptive_mutation_min_weight": 0.05,
+        "adaptive_mutation_max_weight": 5.0,
+        "weight_inheritance": "parent"
+      },
+      "priors": {
+        "tokens_per_param": 4.0,
+        "window_scale": 6.0,
+        "rope_theta_default": 10000.0,
+        "prior_weight": 0.0,
+        "compute_penalty_weight": 0.0
+      }
+    }
+  },
+  {
+    "id": "xover-149-0fe3",
+    "parent": null,
+    "metrics": {
+      "layers": 4.0,
+      "moe_blocks": 0.0,
+      "graph_entropy": 1.4095560799115194,
+      "selector_blocks": 0.0,
+      "selector_topk_avg": 0.0,
+      "memory_blocks": 0.0,
+      "recurrences": 0.0,
+      "novelty": 0.75,
+      "params": 41406289.0,
+      "kv_bytes_per_token": 3584,
+      "throughput_proxy": 238.4185791015625,
+      "ppl_code": 150.20443725585938,
+      "ppl_train": 9.180896759033203,
+      "ppl_eval": 150.20443725585938,
+      "ppl_math": 150.20443725585938,
+      "throughput": 126.49887964025812,
+      "ram": 0.07712522335350513,
+      "long_recall": 0.0,
+      "long_recall_proxy": 0.0,
+      "router_entropy": 0.0,
+      "router_lb": 0.0,
+      "router_load_max": 0.0,
+      "router_load_min": 0.0,
+      "router_load_cv": 0.0,
+      "capacity_overflow": 0.0,
+      "max_grad_norm": 7.7158050537109375,
+      "instability": 7.7158050537109375,
+      "stop_reason_code": 3.0,
+      "nan_seen": 0.0,
+      "loss_spike": 7.133451235946268,
+      "passkey_acc": 0.0,
+      "passkey_loss": 9.26107907295227,
+      "prior_distance": 0.2187499726562534,
+      "longctx_score": 18457.927435556638,
+      "ppl_per_long_recall": 150204.43725585938,
+      "ppl_per_param": 3.6275754452629012e-06,
+      "ppl_per_throughput": 1.1873973720796258
+    },
+    "spec": {
+      "model": {
+        "name": "m4-longctx-overnight-seed",
+        "emb": {
+          "dim": 512,
+          "vocab": 50257,
+          "rope": null,
+          "dropout": 0.0,
+          "init_std": 0.02
+        },
+        "blocks": [
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 1,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          }
+        ],
+        "head": {
+          "tie_embeddings": true,
+          "vocab": 50257
+        },
+        "norm": "rmsnorm",
+        "recurrences": []
+      },
+      "train": {
+        "lr": 0.0008,
+        "warmup": 500,
+        "clip": 1.0,
+        "bf16": true,
+        "grad_checkpoint": true,
+        "max_tokens": 600000,
+        "weight_decay": 0.02,
+        "seed": 4242,
+        "router_lb_coeff": 0.01,
+        "router_entropy_coeff": 0.005,
+        "entropy_threshold": 0.5,
+        "entropy_patience": 3,
+        "instability_threshold": 50.0,
+        "no_improve_patience": 40,
+        "improvement_tolerance": 0.001,
+        "ppl_stop_threshold": null,
+        "init_checkpoint": null,
+        "passkey_eval_steps": 6,
+        "passkey_eval_batches": 4,
+        "passkey_eval_seq_len": 2048,
+        "passkey_eval_min_distance": 1536,
+        "passkey_eval_lr": 0.001,
+        "passkey_eval_batch_size": 1,
+        "passkey_eval_vocab_limit": 256,
+        "optimizer": {
+          "name": "adamw",
+          "lr": null,
+          "betas": null,
+          "eps": null,
+          "weight_decay": null
+        }
+      },
+      "data": {
+        "tokenizer": "gpt2",
+        "hf_revision": "main",
+        "seq_len": 512,
+        "batch_size": 1,
+        "workers": 0,
+        "shards": [
+          {
+            "name": "ag_news",
+            "split": "train",
+            "weight": 0.25,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "wikitext",
+            "split": "wikitext-2-raw-v1",
+            "weight": 0.35,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "mbpp",
+            "split": "train",
+            "weight": 0.4,
+            "cache_path": null,
+            "revision": null
+          }
+        ],
+        "eval_shards": [
+          {
+            "name": "ag_news",
+            "split": "test",
+            "weight": 1.0,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "wikitext",
+            "split": "wikitext-2-raw-v1:test",
+            "weight": 1.0,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "mbpp",
+            "split": "test",
+            "weight": 1.0,
+            "cache_path": null,
+            "revision": null
+          }
+        ],
+        "eval_tokens": 16384,
+        "healing_shards": [],
+        "healing_tokens": null
+      },
+      "evolution": {
+        "rung0_thresholds": {
+          "max_params": 150000000.0,
+          "max_kv_bytes_per_token": 4500.0,
+          "min_throughput_proxy": 5.0,
+          "gate_entropy_min": 0.0,
+          "gate_entropy_max": 4.0
+        },
+        "rung1_tokens": 200000,
+        "rung2_tokens": 600000,
+        "population": 24,
+        "topk_keep": 0.45,
+        "crossover_prob": 0.4,
+        "parent_selection": "map_elites",
+        "pareto_objectives": [
+          "ppl_code",
+          "ppl_math",
+          "long_recall",
+          "throughput",
+          "ram"
+        ],
+        "objectives": {
+          "ppl_code": "min",
+          "passkey_loss": "min",
+          "throughput": "max",
+          "ram": "min"
+        },
+        "composite_metrics": [
+          {
+            "name": "longctx_score",
+            "op": "weighted_sum",
+            "numerator": null,
+            "denominator": null,
+            "terms": {
+              "ppl_code": 1.0,
+              "passkey_loss": 2000.0,
+              "ram": 500.0,
+              "throughput": -2.0
+            },
+            "epsilon": 1e-06
+          }
+        ],
+        "promotion_prob": 0.0,
+        "promotion_min_layers": 0,
+        "promotion_min_moe_blocks": 0,
+        "promotion_steps_multiplier": 1.0,
+        "promotion_tokens_multiplier": 1.0,
+        "promotion_min_router_entropy": 0.0,
+        "promotion_min_recurrence_gain": 0.0,
+        "promotion_max_instability": null,
+        "archive_max_elites": 48,
+        "adaptive_mutation": true,
+        "adaptive_mutation_eta": 0.1,
+        "adaptive_mutation_min_weight": 0.05,
+        "adaptive_mutation_max_weight": 5.0,
+        "weight_inheritance": "parent"
+      },
+      "priors": {
+        "tokens_per_param": 4.0,
+        "window_scale": 6.0,
+        "rope_theta_default": 10000.0,
+        "prior_weight": 0.0,
+        "compute_penalty_weight": 0.0
+      }
+    }
+  },
+  {
+    "id": "duplicate_block_span+toggle_branch_router-166-c885",
+    "parent": "tune_assoc_memory+tune_router-139-9b43",
+    "metrics": {
+      "layers": 5.0,
+      "moe_blocks": 0.0,
+      "graph_entropy": 1.9013330910616704,
+      "selector_blocks": 0.0,
+      "selector_topk_avg": 0.0,
+      "memory_blocks": 2.0,
+      "recurrences": 0.0,
+      "novelty": 0.5,
+      "params": 45478229.0,
+      "kv_bytes_per_token": 2560,
+      "throughput_proxy": 152.587890625,
+      "ppl_code": 149.4170684814453,
+      "ppl_train": 11.936832427978516,
+      "ppl_eval": 149.4170684814453,
+      "ppl_math": 149.4170684814453,
+      "throughput": 130.30406362194583,
+      "ram": 0.08470980264246464,
+      "long_recall": 0.0,
+      "long_recall_proxy": 0.6000000000000001,
+      "router_entropy": 0.8786369562149048,
+      "router_lb": 0.0,
+      "router_load_max": 0.0,
+      "router_load_min": 0.0,
+      "router_load_cv": 0.0,
+      "capacity_overflow": 0.0,
+      "max_grad_norm": 11.469945907592773,
+      "instability": 11.469945907592773,
+      "stop_reason_code": 3.0,
+      "nan_seen": 0.0,
+      "loss_spike": 6.482174306467641,
+      "passkey_acc": 0.0,
+      "passkey_loss": 9.609862804412842,
+      "prior_distance": 0.24999997500000248,
+      "longctx_score": 19150.889451384468,
+      "ppl_per_long_recall": 149417.0684814453,
+      "ppl_per_param": 3.2854636551798294e-06,
+      "ppl_per_throughput": 1.1466800368939567
+    },
+    "spec": {
+      "model": {
+        "name": "m4-longctx-overnight-seed",
+        "emb": {
+          "dim": 512,
+          "vocab": 50257,
+          "rope": null,
+          "dropout": 0.0,
+          "init_std": 0.02
+        },
+        "blocks": [
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": [
+              {
+                "type": "assoc_memory",
+                "heads": 4,
+                "head_dim": 32,
+                "feature_map": "elu",
+                "dropout": 0.0,
+                "gating_weight": 0.2682602754390848
+              }
+            ]
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": [
+              {
+                "type": "assoc_memory",
+                "heads": 4,
+                "head_dim": 32,
+                "feature_map": "elu",
+                "dropout": 0.0,
+                "gating_weight": 0.2682602754390848
+              },
+              {
+                "type": "branch_router",
+                "targets": [
+                  "attn",
+                  "ffn",
+                  "ssm",
+                  "memory"
+                ],
+                "router_type": "sequence",
+                "hidden": 256,
+                "dropout": 0.0,
+                "temperature": 0.861077119331548
+              }
+            ]
+          }
+        ],
+        "head": {
+          "tie_embeddings": true,
+          "vocab": 50257
+        },
+        "norm": "rmsnorm",
+        "recurrences": []
+      },
+      "train": {
+        "lr": 0.0008,
+        "warmup": 500,
+        "clip": 1.0,
+        "bf16": true,
+        "grad_checkpoint": true,
+        "max_tokens": 600000,
+        "weight_decay": 0.02,
+        "seed": 4242,
+        "router_lb_coeff": 0.01,
+        "router_entropy_coeff": 0.005,
+        "entropy_threshold": 0.5,
+        "entropy_patience": 3,
+        "instability_threshold": 50.0,
+        "no_improve_patience": 40,
+        "improvement_tolerance": 0.001,
+        "ppl_stop_threshold": null,
+        "init_checkpoint": null,
+        "passkey_eval_steps": 6,
+        "passkey_eval_batches": 4,
+        "passkey_eval_seq_len": 2048,
+        "passkey_eval_min_distance": 1536,
+        "passkey_eval_lr": 0.001,
+        "passkey_eval_batch_size": 1,
+        "passkey_eval_vocab_limit": 256,
+        "optimizer": {
+          "name": "adamw",
+          "lr": null,
+          "betas": null,
+          "eps": null,
+          "weight_decay": null
+        }
+      },
+      "data": {
+        "tokenizer": "gpt2",
+        "hf_revision": "main",
+        "seq_len": 512,
+        "batch_size": 1,
+        "workers": 0,
+        "shards": [
+          {
+            "name": "ag_news",
+            "split": "train",
+            "weight": 0.25,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "wikitext",
+            "split": "wikitext-2-raw-v1",
+            "weight": 0.35,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "mbpp",
+            "split": "train",
+            "weight": 0.4,
+            "cache_path": null,
+            "revision": null
+          }
+        ],
+        "eval_shards": [
+          {
+            "name": "ag_news",
+            "split": "test",
+            "weight": 1.0,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "wikitext",
+            "split": "wikitext-2-raw-v1:test",
+            "weight": 1.0,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "mbpp",
+            "split": "test",
+            "weight": 1.0,
+            "cache_path": null,
+            "revision": null
+          }
+        ],
+        "eval_tokens": 16384,
+        "healing_shards": [],
+        "healing_tokens": null
+      },
+      "evolution": {
+        "rung0_thresholds": {
+          "max_params": 150000000.0,
+          "max_kv_bytes_per_token": 4500.0,
+          "min_throughput_proxy": 5.0,
+          "gate_entropy_min": 0.0,
+          "gate_entropy_max": 4.0
+        },
+        "rung1_tokens": 200000,
+        "rung2_tokens": 600000,
+        "population": 24,
+        "topk_keep": 0.45,
+        "crossover_prob": 0.4,
+        "parent_selection": "map_elites",
+        "pareto_objectives": [
+          "ppl_code",
+          "ppl_math",
+          "long_recall",
+          "throughput",
+          "ram"
+        ],
+        "objectives": {
+          "ppl_code": "min",
+          "passkey_loss": "min",
+          "throughput": "max",
+          "ram": "min"
+        },
+        "composite_metrics": [
+          {
+            "name": "longctx_score",
+            "op": "weighted_sum",
+            "numerator": null,
+            "denominator": null,
+            "terms": {
+              "ppl_code": 1.0,
+              "passkey_loss": 2000.0,
+              "ram": 500.0,
+              "throughput": -2.0
+            },
+            "epsilon": 1e-06
+          }
+        ],
+        "promotion_prob": 0.0,
+        "promotion_min_layers": 0,
+        "promotion_min_moe_blocks": 0,
+        "promotion_steps_multiplier": 1.0,
+        "promotion_tokens_multiplier": 1.0,
+        "promotion_min_router_entropy": 0.0,
+        "promotion_min_recurrence_gain": 0.0,
+        "promotion_max_instability": null,
+        "archive_max_elites": 48,
+        "adaptive_mutation": true,
+        "adaptive_mutation_eta": 0.1,
+        "adaptive_mutation_min_weight": 0.05,
+        "adaptive_mutation_max_weight": 5.0,
+        "weight_inheritance": "parent"
+      },
+      "priors": {
+        "tokens_per_param": 4.0,
+        "window_scale": 6.0,
+        "rope_theta_default": 10000.0,
+        "prior_weight": 0.0,
+        "compute_penalty_weight": 0.0
+      }
+    }
+  },
+  {
+    "id": "toggle_ssm+tune_assoc_memory-187-67a9",
+    "parent": "duplicate_block_span+toggle_branch_router-166-c885",
+    "metrics": {
+      "layers": 5.0,
+      "moe_blocks": 0.0,
+      "graph_entropy": 2.0800431867402254,
+      "selector_blocks": 0.0,
+      "selector_topk_avg": 0.0,
+      "memory_blocks": 2.0,
+      "recurrences": 0.0,
+      "novelty": 0.7692307692307693,
+      "params": 45496181.0,
+      "kv_bytes_per_token": 2560,
+      "throughput_proxy": 152.587890625,
+      "ppl_code": 148.15853881835938,
+      "ppl_train": 11.487581253051758,
+      "ppl_eval": 148.15853881835938,
+      "ppl_math": 148.15853881835938,
+      "throughput": 69.39915872897494,
+      "ram": 0.08474324084818363,
+      "long_recall": 0.0,
+      "long_recall_proxy": 0.7,
+      "router_entropy": 0.4409022033214569,
+      "router_lb": 0.0,
+      "router_load_max": 0.0,
+      "router_load_min": 0.0,
+      "router_load_cv": 0.0,
+      "capacity_overflow": 0.0,
+      "max_grad_norm": 12.787612915039062,
+      "instability": 12.787612915039062,
+      "stop_reason_code": 2.0,
+      "nan_seen": 0.0,
+      "loss_spike": 6.196482011233456,
+      "passkey_acc": 0.0,
+      "passkey_loss": 9.644979000091553,
+      "prior_distance": 0.24999997500000248,
+      "longctx_score": 19341.689841967607,
+      "ppl_per_long_recall": 148158.53881835938,
+      "ppl_per_param": 3.2565049540830554e-06,
+      "ppl_per_throughput": 2.1348751415988203
+    },
+    "spec": {
+      "model": {
+        "name": "m4-longctx-overnight-seed",
+        "emb": {
+          "dim": 512,
+          "vocab": 50257,
+          "rope": null,
+          "dropout": 0.0,
+          "init_std": 0.02
+        },
+        "blocks": [
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": [
+              {
+                "type": "assoc_memory",
+                "heads": 4,
+                "head_dim": 32,
+                "feature_map": "elu",
+                "dropout": 0.0,
+                "gating_weight": 0.21777113036443657
+              }
+            ]
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": {
+              "kind": "mamba2",
+              "d_state": 16,
+              "d_conv": 4,
+              "dt_rank": 8,
+              "chunk": 128,
+              "gate": 0.1
+            },
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": [
+              {
+                "type": "assoc_memory",
+                "heads": 4,
+                "head_dim": 32,
+                "feature_map": "elu",
+                "dropout": 0.0,
+                "gating_weight": 0.2682602754390848
+              },
+              {
+                "type": "branch_router",
+                "targets": [
+                  "attn",
+                  "ffn",
+                  "ssm",
+                  "memory"
+                ],
+                "router_type": "sequence",
+                "hidden": 256,
+                "dropout": 0.0,
+                "temperature": 0.861077119331548
+              }
+            ]
+          }
+        ],
+        "head": {
+          "tie_embeddings": true,
+          "vocab": 50257
+        },
+        "norm": "rmsnorm",
+        "recurrences": []
+      },
+      "train": {
+        "lr": 0.0008,
+        "warmup": 500,
+        "clip": 1.0,
+        "bf16": true,
+        "grad_checkpoint": true,
+        "max_tokens": 600000,
+        "weight_decay": 0.02,
+        "seed": 4242,
+        "router_lb_coeff": 0.01,
+        "router_entropy_coeff": 0.005,
+        "entropy_threshold": 0.5,
+        "entropy_patience": 3,
+        "instability_threshold": 50.0,
+        "no_improve_patience": 40,
+        "improvement_tolerance": 0.001,
+        "ppl_stop_threshold": null,
+        "init_checkpoint": null,
+        "passkey_eval_steps": 6,
+        "passkey_eval_batches": 4,
+        "passkey_eval_seq_len": 2048,
+        "passkey_eval_min_distance": 1536,
+        "passkey_eval_lr": 0.001,
+        "passkey_eval_batch_size": 1,
+        "passkey_eval_vocab_limit": 256,
+        "optimizer": {
+          "name": "adamw",
+          "lr": null,
+          "betas": null,
+          "eps": null,
+          "weight_decay": null
+        }
+      },
+      "data": {
+        "tokenizer": "gpt2",
+        "hf_revision": "main",
+        "seq_len": 512,
+        "batch_size": 1,
+        "workers": 0,
+        "shards": [
+          {
+            "name": "ag_news",
+            "split": "train",
+            "weight": 0.25,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "wikitext",
+            "split": "wikitext-2-raw-v1",
+            "weight": 0.35,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "mbpp",
+            "split": "train",
+            "weight": 0.4,
+            "cache_path": null,
+            "revision": null
+          }
+        ],
+        "eval_shards": [
+          {
+            "name": "ag_news",
+            "split": "test",
+            "weight": 1.0,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "wikitext",
+            "split": "wikitext-2-raw-v1:test",
+            "weight": 1.0,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "mbpp",
+            "split": "test",
+            "weight": 1.0,
+            "cache_path": null,
+            "revision": null
+          }
+        ],
+        "eval_tokens": 16384,
+        "healing_shards": [],
+        "healing_tokens": null
+      },
+      "evolution": {
+        "rung0_thresholds": {
+          "max_params": 150000000.0,
+          "max_kv_bytes_per_token": 4500.0,
+          "min_throughput_proxy": 5.0,
+          "gate_entropy_min": 0.0,
+          "gate_entropy_max": 4.0
+        },
+        "rung1_tokens": 200000,
+        "rung2_tokens": 600000,
+        "population": 24,
+        "topk_keep": 0.45,
+        "crossover_prob": 0.4,
+        "parent_selection": "map_elites",
+        "pareto_objectives": [
+          "ppl_code",
+          "ppl_math",
+          "long_recall",
+          "throughput",
+          "ram"
+        ],
+        "objectives": {
+          "ppl_code": "min",
+          "passkey_loss": "min",
+          "throughput": "max",
+          "ram": "min"
+        },
+        "composite_metrics": [
+          {
+            "name": "longctx_score",
+            "op": "weighted_sum",
+            "numerator": null,
+            "denominator": null,
+            "terms": {
+              "ppl_code": 1.0,
+              "passkey_loss": 2000.0,
+              "ram": 500.0,
+              "throughput": -2.0
+            },
+            "epsilon": 1e-06
+          }
+        ],
+        "promotion_prob": 0.0,
+        "promotion_min_layers": 0,
+        "promotion_min_moe_blocks": 0,
+        "promotion_steps_multiplier": 1.0,
+        "promotion_tokens_multiplier": 1.0,
+        "promotion_min_router_entropy": 0.0,
+        "promotion_min_recurrence_gain": 0.0,
+        "promotion_max_instability": null,
+        "archive_max_elites": 48,
+        "adaptive_mutation": true,
+        "adaptive_mutation_eta": 0.1,
+        "adaptive_mutation_min_weight": 0.05,
+        "adaptive_mutation_max_weight": 5.0,
+        "weight_inheritance": "parent"
+      },
+      "priors": {
+        "tokens_per_param": 4.0,
+        "window_scale": 6.0,
+        "rope_theta_default": 10000.0,
+        "prior_weight": 0.0,
+        "compute_penalty_weight": 0.0
+      }
+    }
+  },
+  {
+    "id": "toggle_selector+tune_rope-190-8a99",
+    "parent": "duplicate_block_span+toggle_branch_router-166-c885",
+    "metrics": {
+      "layers": 5.0,
+      "moe_blocks": 0.0,
+      "graph_entropy": 1.9013330910616704,
+      "selector_blocks": 1.0,
+      "selector_topk_avg": 64.0,
+      "memory_blocks": 2.0,
+      "recurrences": 0.0,
+      "novelty": 0.6923076923076923,
+      "params": 45478229.0,
+      "kv_bytes_per_token": 2560,
+      "throughput_proxy": 152.587890625,
+      "ppl_code": 140.79832458496094,
+      "ppl_train": 14.79456901550293,
+      "ppl_eval": 140.79832458496094,
+      "ppl_math": 140.79832458496094,
+      "throughput": 14.552405287782317,
+      "ram": 0.08470980264246464,
+      "long_recall": 0.0,
+      "long_recall_proxy": 0.6000000000000001,
+      "router_entropy": 0.4016285538673401,
+      "router_lb": 0.0,
+      "router_load_max": 0.0,
+      "router_load_min": 0.0,
+      "router_load_cv": 0.0,
+      "capacity_overflow": 0.0,
+      "max_grad_norm": 12.965456008911133,
+      "instability": 12.965456008911133,
+      "stop_reason_code": 2.0,
+      "nan_seen": 0.0,
+      "loss_spike": 5.611838662123773,
+      "passkey_acc": 0.0,
+      "passkey_loss": 9.631288290023804,
+      "prior_distance": 0.24999997500000248,
+      "longctx_score": 19416.624995378235,
+      "ppl_per_long_recall": 140798.32458496094,
+      "ppl_per_param": 3.0959500332557133e-06,
+      "ppl_per_throughput": 9.675261360619897
+    },
+    "spec": {
+      "model": {
+        "name": "m4-longctx-overnight-seed",
+        "emb": {
+          "dim": 512,
+          "vocab": 50257,
+          "rope": null,
+          "dropout": 0.0,
+          "init_std": 0.02
+        },
+        "blocks": [
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": null,
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "dsa",
+              "selector_topk": 64,
+              "selector_heads": 2,
+              "selector_dim": 64,
+              "selector_rope": "none",
+              "selector_detach": true
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": [
+              {
+                "type": "assoc_memory",
+                "heads": 4,
+                "head_dim": 32,
+                "feature_map": "elu",
+                "dropout": 0.0,
+                "gating_weight": 0.2682602754390848
+              }
+            ]
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": [
+              {
+                "type": "assoc_memory",
+                "heads": 4,
+                "head_dim": 32,
+                "feature_map": "elu",
+                "dropout": 0.0,
+                "gating_weight": 0.2682602754390848
+              },
+              {
+                "type": "branch_router",
+                "targets": [
+                  "attn",
+                  "ffn",
+                  "ssm",
+                  "memory"
+                ],
+                "router_type": "sequence",
+                "hidden": 256,
+                "dropout": 0.0,
+                "temperature": 0.861077119331548
+              }
+            ]
+          }
+        ],
+        "head": {
+          "tie_embeddings": true,
+          "vocab": 50257
+        },
+        "norm": "rmsnorm",
+        "recurrences": []
+      },
+      "train": {
+        "lr": 0.0008,
+        "warmup": 500,
+        "clip": 1.0,
+        "bf16": true,
+        "grad_checkpoint": true,
+        "max_tokens": 600000,
+        "weight_decay": 0.02,
+        "seed": 4242,
+        "router_lb_coeff": 0.01,
+        "router_entropy_coeff": 0.005,
+        "entropy_threshold": 0.5,
+        "entropy_patience": 3,
+        "instability_threshold": 50.0,
+        "no_improve_patience": 40,
+        "improvement_tolerance": 0.001,
+        "ppl_stop_threshold": null,
+        "init_checkpoint": null,
+        "passkey_eval_steps": 6,
+        "passkey_eval_batches": 4,
+        "passkey_eval_seq_len": 2048,
+        "passkey_eval_min_distance": 1536,
+        "passkey_eval_lr": 0.001,
+        "passkey_eval_batch_size": 1,
+        "passkey_eval_vocab_limit": 256,
+        "optimizer": {
+          "name": "adamw",
+          "lr": null,
+          "betas": null,
+          "eps": null,
+          "weight_decay": null
+        }
+      },
+      "data": {
+        "tokenizer": "gpt2",
+        "hf_revision": "main",
+        "seq_len": 512,
+        "batch_size": 1,
+        "workers": 0,
+        "shards": [
+          {
+            "name": "ag_news",
+            "split": "train",
+            "weight": 0.25,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "wikitext",
+            "split": "wikitext-2-raw-v1",
+            "weight": 0.35,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "mbpp",
+            "split": "train",
+            "weight": 0.4,
+            "cache_path": null,
+            "revision": null
+          }
+        ],
+        "eval_shards": [
+          {
+            "name": "ag_news",
+            "split": "test",
+            "weight": 1.0,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "wikitext",
+            "split": "wikitext-2-raw-v1:test",
+            "weight": 1.0,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "mbpp",
+            "split": "test",
+            "weight": 1.0,
+            "cache_path": null,
+            "revision": null
+          }
+        ],
+        "eval_tokens": 16384,
+        "healing_shards": [],
+        "healing_tokens": null
+      },
+      "evolution": {
+        "rung0_thresholds": {
+          "max_params": 150000000.0,
+          "max_kv_bytes_per_token": 4500.0,
+          "min_throughput_proxy": 5.0,
+          "gate_entropy_min": 0.0,
+          "gate_entropy_max": 4.0
+        },
+        "rung1_tokens": 200000,
+        "rung2_tokens": 600000,
+        "population": 24,
+        "topk_keep": 0.45,
+        "crossover_prob": 0.4,
+        "parent_selection": "map_elites",
+        "pareto_objectives": [
+          "ppl_code",
+          "ppl_math",
+          "long_recall",
+          "throughput",
+          "ram"
+        ],
+        "objectives": {
+          "ppl_code": "min",
+          "passkey_loss": "min",
+          "throughput": "max",
+          "ram": "min"
+        },
+        "composite_metrics": [
+          {
+            "name": "longctx_score",
+            "op": "weighted_sum",
+            "numerator": null,
+            "denominator": null,
+            "terms": {
+              "ppl_code": 1.0,
+              "passkey_loss": 2000.0,
+              "ram": 500.0,
+              "throughput": -2.0
+            },
+            "epsilon": 1e-06
+          }
+        ],
+        "promotion_prob": 0.0,
+        "promotion_min_layers": 0,
+        "promotion_min_moe_blocks": 0,
+        "promotion_steps_multiplier": 1.0,
+        "promotion_tokens_multiplier": 1.0,
+        "promotion_min_router_entropy": 0.0,
+        "promotion_min_recurrence_gain": 0.0,
+        "promotion_max_instability": null,
+        "archive_max_elites": 48,
+        "adaptive_mutation": true,
+        "adaptive_mutation_eta": 0.1,
+        "adaptive_mutation_min_weight": 0.05,
+        "adaptive_mutation_max_weight": 5.0,
+        "weight_inheritance": "parent"
+      },
+      "priors": {
+        "tokens_per_param": 4.0,
+        "window_scale": 6.0,
+        "rope_theta_default": 10000.0,
+        "prior_weight": 0.0,
+        "compute_penalty_weight": 0.0
+      }
+    }
+  },
+  {
+    "id": "xover-193-ad40",
+    "parent": null,
+    "metrics": {
+      "layers": 4.0,
+      "moe_blocks": 0.0,
+      "graph_entropy": 1.4095560799115194,
+      "selector_blocks": 0.0,
+      "selector_topk_avg": 0.0,
+      "memory_blocks": 0.0,
+      "recurrences": 0.0,
+      "novelty": 0.6666666666666666,
+      "params": 41012305.0,
+      "kv_bytes_per_token": 2048,
+      "throughput_proxy": 238.4185791015625,
+      "ppl_code": 149.69969177246094,
+      "ppl_train": 22.137544631958008,
+      "ppl_eval": 149.69969177246094,
+      "ppl_math": 149.69969177246094,
+      "throughput": 189.58003705586188,
+      "ram": 0.07639137096703053,
+      "long_recall": 0.0,
+      "long_recall_proxy": 0.0,
+      "router_entropy": 0.0,
+      "router_lb": 0.0,
+      "router_load_max": 0.0,
+      "router_load_min": 0.0,
+      "router_load_cv": 0.0,
+      "capacity_overflow": 0.0,
+      "max_grad_norm": 3.1465795040130615,
+      "instability": 3.1465795040130615,
+      "stop_reason_code": 3.0,
+      "nan_seen": 0.0,
+      "loss_spike": 7.788918423466384,
+      "passkey_acc": 0.0,
+      "passkey_loss": 9.611680507659912,
+      "prior_distance": 0.24999996875000388,
+      "longctx_score": 19032.096318464075,
+      "ppl_per_long_recall": 149699.69177246094,
+      "ppl_per_param": 3.6501165143597984e-06,
+      "ppl_per_throughput": 0.7896384772218936
+    },
+    "spec": {
+      "model": {
+        "name": "m4-longctx-overnight-seed",
+        "emb": {
+          "dim": 512,
+          "vocab": 50257,
+          "rope": null,
+          "dropout": 0.0,
+          "init_std": 0.02
+        },
+        "blocks": [
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          },
+          {
+            "name": null,
+            "attn": {
+              "kind": "GQA",
+              "causal": true,
+              "heads": 8,
+              "head_dim": 64,
+              "rope": "yarn",
+              "rope_theta": null,
+              "rope_factor": null,
+              "alibi": false,
+              "linear_feature_map": "elu",
+              "kv_latent_dim": null,
+              "sw": null,
+              "kv_groups": 4,
+              "dropout": 0.0,
+              "qk_norm_max": null,
+              "gating_pos": "none",
+              "gating_op": "dense",
+              "sparsity": "none",
+              "block_size": null,
+              "block_stride": null,
+              "global_stride": null,
+              "dilation": null,
+              "selector": "none",
+              "selector_topk": null,
+              "selector_heads": null,
+              "selector_dim": null,
+              "selector_rope": "none",
+              "selector_detach": false
+            },
+            "ffn": {
+              "type": "dense",
+              "hidden": 2048,
+              "activation": "swiglu",
+              "dropout": 0.0
+            },
+            "ssm": null,
+            "extras": []
+          }
+        ],
+        "head": {
+          "tie_embeddings": true,
+          "vocab": 50257
+        },
+        "norm": "rmsnorm",
+        "recurrences": []
+      },
+      "train": {
+        "lr": 0.0008,
+        "warmup": 500,
+        "clip": 1.0,
+        "bf16": true,
+        "grad_checkpoint": true,
+        "max_tokens": 600000,
+        "weight_decay": 0.02,
+        "seed": 4242,
+        "router_lb_coeff": 0.01,
+        "router_entropy_coeff": 0.005,
+        "entropy_threshold": 0.5,
+        "entropy_patience": 3,
+        "instability_threshold": 50.0,
+        "no_improve_patience": 40,
+        "improvement_tolerance": 0.001,
+        "ppl_stop_threshold": null,
+        "init_checkpoint": null,
+        "passkey_eval_steps": 6,
+        "passkey_eval_batches": 4,
+        "passkey_eval_seq_len": 2048,
+        "passkey_eval_min_distance": 1536,
+        "passkey_eval_lr": 0.001,
+        "passkey_eval_batch_size": 1,
+        "passkey_eval_vocab_limit": 256,
+        "optimizer": {
+          "name": "adamw",
+          "lr": null,
+          "betas": null,
+          "eps": null,
+          "weight_decay": null
+        }
+      },
+      "data": {
+        "tokenizer": "gpt2",
+        "hf_revision": "main",
+        "seq_len": 512,
+        "batch_size": 1,
+        "workers": 0,
+        "shards": [
+          {
+            "name": "ag_news",
+            "split": "train",
+            "weight": 0.25,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "wikitext",
+            "split": "wikitext-2-raw-v1",
+            "weight": 0.35,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "mbpp",
+            "split": "train",
+            "weight": 0.4,
+            "cache_path": null,
+            "revision": null
+          }
+        ],
+        "eval_shards": [
+          {
+            "name": "ag_news",
+            "split": "test",
+            "weight": 1.0,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "wikitext",
+            "split": "wikitext-2-raw-v1:test",
+            "weight": 1.0,
+            "cache_path": null,
+            "revision": null
+          },
+          {
+            "name": "mbpp",
+            "split": "test",
+            "weight": 1.0,
+            "cache_path": null,
+            "revision": null
+          }
+        ],
+        "eval_tokens": 16384,
+        "healing_shards": [],
+        "healing_tokens": null
+      },
+      "evolution": {
+        "rung0_thresholds": {
+          "max_params": 150000000.0,
+          "max_kv_bytes_per_token": 4500.0,
+          "min_throughput_proxy": 5.0,
+          "gate_entropy_min": 0.0,
+          "gate_entropy_max": 4.0
+        },
+        "rung1_tokens": 200000,
+        "rung2_tokens": 600000,
+        "population": 24,
+        "topk_keep": 0.45,
+        "crossover_prob": 0.4,
+        "parent_selection": "map_elites",
+        "pareto_objectives": [
+          "ppl_code",
+          "ppl_math",
+          "long_recall",
+          "throughput",
+          "ram"
+        ],
+        "objectives": {
+          "ppl_code": "min",
+          "passkey_loss": "min",
+          "throughput": "max",
+          "ram": "min"
+        },
+        "composite_metrics": [
+          {
+            "name": "longctx_score",
+            "op": "weighted_sum",
+            "numerator": null,
+            "denominator": null,
+            "terms": {
+              "ppl_code": 1.0,
+              "passkey_loss": 2000.0,
+              "ram": 500.0,
+              "throughput": -2.0
+            },
+            "epsilon": 1e-06
+          }
+        ],
+        "promotion_prob": 0.0,
+        "promotion_min_layers": 0,
+        "promotion_min_moe_blocks": 0,
+        "promotion_steps_multiplier": 1.0,
+        "promotion_tokens_multiplier": 1.0,
+        "promotion_min_router_entropy": 0.0,
+        "promotion_min_recurrence_gain": 0.0,
+        "promotion_max_instability": null,
+        "archive_max_elites": 48,
+        "adaptive_mutation": true,
+        "adaptive_mutation_eta": 0.1,
+        "adaptive_mutation_min_weight": 0.05,
+        "adaptive_mutation_max_weight": 5.0,
+        "weight_inheritance": "parent"
+      },
+      "priors": {
+        "tokens_per_param": 4.0,
+        "window_scale": 6.0,
+        "rope_theta_default": 10000.0,
+        "prior_weight": 0.0,
+        "compute_penalty_weight": 0.0
+      }
+    }
+  }
+]
