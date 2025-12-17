@@ -42,6 +42,7 @@ train:
   max_tokens: 8192
   weight_decay: 0.01
   seed: 7
+  instability_threshold: 500.0
 data:
   tokenizer: sshleifer/tiny-gpt2
   hf_revision: main

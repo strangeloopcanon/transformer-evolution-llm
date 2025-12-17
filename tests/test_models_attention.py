@@ -61,7 +61,7 @@ def test_sliding_sparsity_builds_local_window_mask() -> None:
 
         for i in range(t):
             lo = max(0, i - 1)
-            hi = min(t, i + 2)
+            hi = i + 1
             window = mask[i, lo:hi]
             assert torch.all(window == 0.0)
             if lo > 0:
@@ -91,8 +91,10 @@ def test_block_sparsity_masks_cross_block_attention() -> None:
         mask = mock_sdpa.call_args.kwargs.get("attn_mask")
         assert mask is not None
         assert mask.shape == (t, t)
-        assert mask[0, 1] == 0.0
-        assert torch.isneginf(mask[0, 2])
+        # Causal: token 1 can attend to token 0 within the same block, but not across blocks.
+        assert mask[1, 0] == 0.0
+        assert torch.isneginf(mask[1, 2])
+        assert torch.isneginf(mask[0, 1])
 
 
 def test_dilated_sparsity_masks_every_other_token() -> None:
@@ -117,14 +119,49 @@ def test_dilated_sparsity_masks_every_other_token() -> None:
 
         even_positions = [0, 2, 4]
         odd_positions = [1, 3, 5]
-        for j in even_positions:
-            assert mask[0, j] == 0.0
-        for j in odd_positions:
+        # Causal + dilated: position i attends only to positions with same parity <= i.
+        assert mask[0, 0] == 0.0
+        for j in even_positions[1:] + odd_positions:
             assert torch.isneginf(mask[0, j])
-        for j in odd_positions:
-            assert mask[1, j] == 0.0
-        for j in even_positions:
+        assert mask[1, 1] == 0.0
+        for j in odd_positions[1:] + even_positions:
             assert torch.isneginf(mask[1, j])
+        for j in even_positions:
+            assert mask[4, j] == 0.0
+        for j in odd_positions:
+            assert torch.isneginf(mask[4, j])
+        for j in odd_positions:
+            assert mask[5, j] == 0.0
+        for j in even_positions:
+            assert torch.isneginf(mask[5, j])
+
+
+def test_selector_builds_causal_topk_mask() -> None:
+    cfg = AttentionConfig(
+        heads=2,
+        head_dim=4,
+        selector="dsa",
+        selector_topk=2,
+        selector_heads=1,
+        selector_dim=2,
+    )
+    dim = cfg.heads * cfg.head_dim
+    module = MultiHeadSelfAttention(cfg, dim)
+
+    b, t = 1, 6
+    q = torch.randn(b, cfg.heads, t, cfg.head_dim)
+    k = torch.randn(b, cfg.heads, t, cfg.head_dim)
+
+    mask = module._build_selector_mask(q, k, causal=True)
+    assert mask.shape == (b, 1, t, t)
+
+    upper = torch.triu(torch.ones(t, t, dtype=torch.bool), diagonal=1)
+    assert torch.all(torch.isneginf(mask[0, 0][upper]))
+
+    allowed = mask[0, 0] == 0.0
+    counts = allowed.sum(dim=-1)
+    assert torch.all(counts >= 1)
+    assert torch.all(counts <= cfg.selector_topk + 1)
 
 
 def test_gated_attention_logic() -> None:

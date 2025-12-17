@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
+import torch
 import ujson as json
 
 from .dsl import ArchitectureSpec, load_architecture_spec, save_architecture_spec
@@ -17,6 +20,7 @@ __all__ = [
     "run_evolution",
     "export_frontier_seed",
     "prune_checkpoints",
+    "convert_checkpoints",
 ]
 
 
@@ -162,3 +166,84 @@ def prune_checkpoints(
             if not dry_run:
                 path.unlink(missing_ok=True)
     return kept, removed
+
+
+def _parse_checkpoint_dtype(dtype: str) -> torch.dtype:
+    key = (dtype or "fp16").lower()
+    if key in {"fp16", "float16"}:
+        return torch.float16
+    if key in {"bf16", "bfloat16"}:
+        return torch.bfloat16
+    if key in {"fp32", "float32"}:
+        return torch.float32
+    raise ValueError(f"Unsupported checkpoint dtype: {dtype}")
+
+
+def convert_checkpoints(
+    checkpoint_dir: str | Path,
+    dtype: str = "fp16",
+    dry_run: bool = False,
+) -> tuple[list[Path], int, int]:
+    """Convert checkpoint tensors to a smaller dtype (in-place).
+
+    Returns (paths, total_before_bytes, total_after_bytes).
+    """
+    checkpoint_dir_path = Path(checkpoint_dir)
+    if not checkpoint_dir_path.exists():
+        msg = f"Checkpoint directory not found: {checkpoint_dir_path}"
+        raise FileNotFoundError(msg)
+    torch_dtype = _parse_checkpoint_dtype(dtype)
+
+    paths = sorted(checkpoint_dir_path.glob("*.pt"))
+    total_before = 0
+    total_after = 0
+    processed: list[Path] = []
+    for path in paths:
+        try:
+            before = path.stat().st_size
+        except OSError:
+            before = 0
+        total_before += before
+        if dry_run:
+            total_after += before
+            processed.append(path)
+            continue
+
+        state = torch.load(
+            path, map_location="cpu"
+        )  # nosec B614 - loading trusted local checkpoints
+        if not isinstance(state, dict):
+            msg = f"Checkpoint {path} did not contain a state_dict mapping"
+            raise ValueError(msg)
+        converted: dict[str, Any] = {}
+        for key, value in state.items():
+            if isinstance(value, torch.Tensor):
+                tensor = value.detach().to(device="cpu")
+                if tensor.is_floating_point():
+                    tensor = tensor.to(dtype=torch_dtype)
+                converted[key] = tensor
+            else:
+                converted[key] = value
+
+        with tempfile.NamedTemporaryFile(
+            delete=False,
+            dir=checkpoint_dir_path,
+            prefix=f"{path.stem}.",
+            suffix=".tmp.pt",
+        ) as tmp:
+            tmp_path = Path(tmp.name)
+        try:
+            torch.save(converted, tmp_path)
+            os.replace(tmp_path, path)
+        finally:
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        try:
+            total_after += path.stat().st_size
+        except OSError:
+            total_after += 0
+        processed.append(path)
+
+    return processed, total_before, total_after

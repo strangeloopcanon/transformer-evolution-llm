@@ -19,3 +19,34 @@ def test_simulated_run_advances_frontier(tmp_path: Path, tiny_spec):
     out_path = tmp_path / "frontier.json"
     runner.save_frontier(out_path)
     assert out_path.exists()
+
+
+def test_map_elites_parent_selection_builds_archive(tiny_spec):
+    spec = tiny_spec.model_copy(deep=True)
+    spec.evolution.parent_selection = "map_elites"
+    runner = EvolutionRunner(
+        base_spec=spec,
+        evolution_cfg=spec.evolution,
+        mode="simulate",
+        seed=123,
+    )
+    _ = runner.run(generations=3)
+    assert runner.archive, "expected map-elites strategy to populate an archive"
+
+
+def test_static_checker_reads_resource_thresholds(tiny_spec):
+    spec = tiny_spec.model_copy(deep=True)
+    spec.evolution.rung0_thresholds = {
+        "max_params": 123.0,
+        "max_kv_bytes_per_token": 456.0,
+        "min_throughput_proxy": 7.0,
+    }
+    runner = EvolutionRunner(
+        base_spec=spec,
+        evolution_cfg=spec.evolution,
+        mode="simulate",
+        seed=123,
+    )
+    assert runner.checker.max_params == 123.0
+    assert runner.checker.max_kv_bytes == 456.0
+    assert runner.checker.min_throughput == 7.0

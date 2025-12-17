@@ -46,6 +46,8 @@ For a more detailed overview of how different evolutionary runs behaved – incl
 
 - Reproduce the latest sweep (above) or export a seed for scaling: `scripts/export_seed.py <frontier_path> --id <candidate_id> --out seeds/<name>.pt`.
 - Inspect frontier/lineage: `runs/frontier_phi_entropy_v2.json`, `runs/frontier_phi_entropy_v2_lineage.json`.
+- Run a long-context motif discovery sweep on Mac (MPS): see `configs/exp_longctx_overnight_m4_unbiased.yaml` and the “Long-context discovery run (Mac M4 / MPS)” section below.
+- Reclaim disk: new runs save checkpoints as fp16 by default; for older runs use `python -m transformer_evolution_llm.cli cleanup-run runs/<run>.manifest.json --keep frontier+state --apply` and/or `python -m transformer_evolution_llm.cli convert-checkpoints runs/<checkpoint_dir> --dtype fp16 --apply`.
 - For a longer SOTA-oriented sweep on a bigger box: reuse `configs/seed_xover-48-9237.yaml` but raise `--generations` (e.g., 200–240), `--steps` (320–384), and consider bumping `rung1_tokens/rung2_tokens` in the config (e.g., 0.6M / 1.8–3.6M) with `promotion_min_layers>=8`, `promotion_min_moe_blocks>=2`; set `--device cuda` if available.
 - For historical sweep details, see `RUNS_HISTORY.md` (succinct) or the archived artefact paths noted there.
 
@@ -90,6 +92,24 @@ Start your next run from `configs/seed_mutate_topk.yaml`; if you provided `--out
 
 </details>
 
+<details>
+<summary>Long-context discovery run (Mac M4 / MPS)</summary>
+
+This is a disk-safe, local long-context probe run intended for motif discovery (not final scaling). It optimizes `passkey_loss` alongside short-run perplexity without hardcoding any specific module choices.
+
+```bash
+export TOKENIZERS_PARALLELISM=false
+RUN="runs/exp_longctx_unbiased_m4_$(date +%Y%m%d_%H%M%S)"
+HF_TOKEN="$HF_TOKEN" PYTHONPATH=src .venv/bin/python scripts/run_live.py configs/exp_longctx_overnight_m4_unbiased.yaml \
+  --device mps --generations 200 --steps 240 --eval-batches 4 --seed 4242 \
+  --out "$RUN/frontier.json" --lineage-out "$RUN/frontier_lineage.json" --state-out "$RUN/frontier.state.json" \
+  --checkpoint-dir "$RUN/checkpoints" --mutation-steps 2 --prune-checkpoints-to-frontier
+
+PYTHONPATH=src .venv/bin/python scripts/report_motifs.py "$RUN/frontier.json" --top 15
+```
+
+</details>
+
 ## Appendix: operator notes
 
 <details>
@@ -103,6 +123,12 @@ Start your next run from `configs/seed_mutate_topk.yaml`; if you provided `--out
   - Keep `grad_ckpt` on; expect heavier MoE/SSM stacks to need more tokens before routers stabilize.
   - Re-tune `--score-weight-*` for production priorities (e.g., raise throughput weight if serving latency dominates; raise layers/MoE if quality is king).
 - What’s intentionally out-of-scope here: distributed trainers/ZeRO/TPU setups and true cluster-level SLOs. Treat these runs as **architecture scouting**, then re-train winners at scale.
+
+### Speedrun-style relevance (directional)
+
+The NanoGPT speedrun record for training a 124M model to a target validation loss on FineWeb—typically on an 8×H100 pod—has improved rapidly (community reports went from ~45 minutes to under 3 minutes, with recent figures around ~2.3–2.9 minutes).
+
+So what: once we’re happy with local motif discovery, we can add an optional “speedrun-style” eval path that measures *time-to-target*/*tokens-to-target* under a fixed NanoGPT-like recipe, so architectures are judged on training efficiency (not just short-run perplexity).
 
 ### Sparse attention patterns
 
@@ -210,13 +236,14 @@ PYTHONPATH=src python scripts/run_live.py configs/seed_xover-48-9237.yaml \
 
 These are illustrative survivors from recent sweeps; they all use the same ~100 M–scale surrogate and live in the `runs/` JSONs so you can inspect or reseed them.
 
+Note: older frontier JSONs may include non-causal surrogate metrics from before the next-token/causal-mask fix; treat those numbers as placeholders and rerun for meaningful PPL comparisons.
+
 - **Expert‑ and selector‑rich frontier**  
   Source: `runs/frontier_small_frontier_rich_strict_next2.json`, id `toggle_selector+dense_to_moe-6-21f3`.  
   - Depth: 13 transformer blocks.  
   - Experts: 6 MoE FFNs (32 experts, top‑k≈4, shared expert enabled).  
   - Selectors: 7 attention blocks with DSA selectors (2–4 heads, top‑k≈64–96).  
   - Memory: retro extras on 10 blocks (256 memory tokens, stride 32, gated aggregator).  
-  - Metrics (surrogate): `ppl_code≈1.01`, `long_recall≈0.72`, moderate throughput on mps.  
   This is a “dense‑sparse‑memory” stack where most of the depth participates in routing or memory, not just a single special layer.
 
 ```mermaid
@@ -234,7 +261,6 @@ flowchart LR
   Source: `runs/frontier_memory_frontier.json`.  
   - Balanced long‑memory candidate: id `tune_retro+insert_retro_module-7-87f0`  
     - Depth: 12 blocks; Experts: 5 MoE; Selectors: 6; Memory blocks: 8; Recurrences: 4.  
-    - Metrics: `ppl_code≈1.00`, `long_recall≈0.93` under the memory‑biased objective.  
   - High‑capacity hydra candidate: id `xover-9-9b09`  
     - Depth: 18 blocks; Experts: 8 MoE; Selectors: 9; Memory blocks: 10; Recurrences: 3.  
     - Metrics: slightly worse perplexity but very high structural capacity, useful as a design probe.  

@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import torch
 import ujson as json
 from typer.testing import CliRunner
 
@@ -95,3 +96,28 @@ def test_cli_export_seed_from_frontier(tmp_path: Path, tiny_spec, monkeypatch):
     exported_spec = api.load_spec(out_cfg)
     expected_ckpt = Path("runs/checkpoints") / f"{candidate_id}.pt"
     assert exported_spec.train.init_checkpoint == str(expected_ckpt)
+
+
+def test_cli_convert_checkpoints_downcasts_fp16(tmp_path: Path):
+    runner = CliRunner()
+    ckpt_dir = tmp_path / "checkpoints"
+    ckpt_dir.mkdir(parents=True)
+    ckpt_path = ckpt_dir / "seed-1-abcd.pt"
+    torch.save(
+        {"w": torch.randn(4, 4, dtype=torch.float32), "i": torch.ones(2, dtype=torch.int64)},
+        ckpt_path,
+    )
+
+    result = runner.invoke(app, ["convert-checkpoints", str(ckpt_dir), "--dtype", "fp16"])
+    assert result.exit_code == 0, result.output
+    state = torch.load(ckpt_path, map_location="cpu")  # nosec B614 - test checkpoint
+    assert state["w"].dtype == torch.float32
+    assert state["i"].dtype == torch.int64
+
+    result_apply = runner.invoke(
+        app, ["convert-checkpoints", str(ckpt_dir), "--dtype", "fp16", "--apply"]
+    )
+    assert result_apply.exit_code == 0, result_apply.output
+    state = torch.load(ckpt_path, map_location="cpu")  # nosec B614 - test checkpoint
+    assert state["w"].dtype == torch.float16
+    assert state["i"].dtype == torch.int64

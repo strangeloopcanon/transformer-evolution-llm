@@ -25,16 +25,22 @@ class EmbeddingConfig(BaseModel):
     vocab: int | None = Field(default=None, gt=0)
     rope: str | None = None
     dropout: float = Field(default=0.0, ge=0.0, le=1.0)
+    init_std: float = Field(default=0.02, gt=0.0)
 
 
 class AttentionConfig(BaseModel):
     """Attention block configuration."""
 
-    kind: Literal["MHA", "GQA", "MQA"] = "MHA"
+    kind: Literal["MHA", "GQA", "MQA", "LINEAR", "MLA"] = "MHA"
+    causal: bool = True
     heads: int = Field(gt=0)
     head_dim: int = Field(gt=0, alias="head_dim")
     rope: str | None = None
     rope_theta: float | None = Field(default=None, gt=0.0)
+    rope_factor: float | None = Field(default=None, gt=0.0)
+    alibi: bool = False
+    linear_feature_map: Literal["elu"] = "elu"
+    kv_latent_dim: int | None = Field(default=None, gt=0)
     sw: int | None = Field(default=None, alias="sliding_window")
     kv_groups: int | None = Field(default=None, ge=1)
     dropout: float = Field(default=0.0, ge=0.0, le=1.0)
@@ -70,9 +76,64 @@ class AttentionConfig(BaseModel):
             data.setdefault("gating_op", "dense")
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def default_kv_groups_for_kind(cls, data: Any) -> Any:
+        """Keep `kind` meaningful even when configs omit `kv_groups`."""
+        if not isinstance(data, dict):
+            return data
+        kind = data.get("kind") or "MHA"
+        if "kv_groups" in data and data.get("kv_groups") is not None:
+            return data
+        heads = data.get("heads")
+        if not isinstance(heads, int) or heads <= 0:
+            return data
+        if kind == "MQA":
+            data["kv_groups"] = heads
+        elif kind == "GQA":
+            data["kv_groups"] = max(1, heads // 4)
+        else:
+            data["kv_groups"] = 1
+        return data
+
     @property
     def hidden_dim(self) -> int:
         return self.heads * self.head_dim
+
+    @model_validator(mode="after")
+    def normalize_selector(self) -> AttentionConfig:
+        if self.selector != "none":
+            if self.selector_topk is None:
+                self.selector_topk = 64
+            if self.selector_heads is None:
+                self.selector_heads = 1
+            self.selector_heads = max(1, min(int(self.selector_heads), int(self.heads)))
+            if self.selector_dim is None:
+                self.selector_dim = min(int(self.head_dim), 32)
+            self.selector_dim = max(1, min(int(self.selector_dim), int(self.head_dim)))
+        return self
+
+
+class KVPolicyConfig(BaseModel):
+    """Inference KV-cache policy (for memory/latency-aware evolution).
+
+    This is a **declarative** policy used by static metrics and (optionally) future
+    inference paths. Training in this repo is full-sequence (no KV cache), so
+    this primarily impacts long-context *inference* constraints.
+    """
+
+    cache: Literal["full", "window", "ring", "none", "latent"] = "full"
+    window: int | None = Field(default=None, gt=0)
+    quant: Literal["none", "fp8", "nf4", "int8"] = "none"
+    latent_dim: int | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def validate_policy(self) -> KVPolicyConfig:
+        if self.cache in {"window", "ring"} and self.window is None:
+            raise ValueError("kv_policy.cache=window|ring requires kv_policy.window")
+        if self.cache == "latent" and self.latent_dim is None:
+            raise ValueError("kv_policy.cache=latent requires kv_policy.latent_dim")
+        return self
 
 
 class DenseFFNConfig(BaseModel):
@@ -192,8 +253,70 @@ class CustomModuleConfig(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
 
 
+class AssociativeMemoryConfig(BaseModel):
+    """Causal associative memory (fast-weights / linear-attention style)."""
+
+    type: Literal["assoc_memory"] = "assoc_memory"
+    heads: int = Field(gt=0)
+    head_dim: int = Field(gt=0)
+    feature_map: Literal["elu"] = "elu"
+    dropout: float = Field(default=0.0, ge=0.0, le=1.0)
+    gating_weight: float = Field(default=0.1, ge=0.0, le=1.0)
+
+
+class MemoryTokensConfig(BaseModel):
+    """Learnable persistent memory tokens (cross-attention style)."""
+
+    type: Literal["memory_tokens"] = "memory_tokens"
+    tokens: int = Field(gt=0)
+    heads: int = Field(gt=0)
+    head_dim: int = Field(gt=0)
+    dropout: float = Field(default=0.0, ge=0.0, le=1.0)
+    init_std: float = Field(default=0.02, gt=0.0)
+    gating_weight: float = Field(default=0.1, ge=0.0, le=1.0)
+
+
+class ChunkMemoryConfig(BaseModel):
+    """Causal chunk-summary memory (downsampled trailing-window summaries)."""
+
+    type: Literal["chunk_memory"] = "chunk_memory"
+    chunk_size: int = Field(gt=0)
+    stride: int | None = Field(default=None, gt=0)
+    heads: int = Field(gt=0)
+    head_dim: int = Field(gt=0)
+    dropout: float = Field(default=0.0, ge=0.0, le=1.0)
+    gating_weight: float = Field(default=0.1, ge=0.0, le=1.0)
+
+
+class BranchRouterConfig(BaseModel):
+    """Learned router that mixes branch outputs inside a block."""
+
+    type: Literal["branch_router"] = "branch_router"
+    targets: list[str] = Field(default_factory=lambda: ["attn", "ffn", "ssm", "memory"])
+    router_type: Literal["token", "sequence"] = "token"
+    hidden: int | None = Field(default=None, gt=0)
+    dropout: float = Field(default=0.0, ge=0.0, le=1.0)
+    temperature: float = Field(default=1.0, gt=0.0)
+
+
+class LayerScaleConfig(BaseModel):
+    """Per-channel residual scaling (LayerScale/ReZero-like stability knob)."""
+
+    type: Literal["layer_scale"] = "layer_scale"
+    targets: list[str] = Field(default_factory=lambda: ["attn", "ffn"])
+    init: float = Field(default=1e-5, gt=0.0)
+    learnable: bool = True
+
+
 ExtraModuleConfig = Annotated[
-    RetroConfig | GatedModuleConfig | CustomModuleConfig,
+    RetroConfig
+    | GatedModuleConfig
+    | CustomModuleConfig
+    | AssociativeMemoryConfig
+    | MemoryTokensConfig
+    | ChunkMemoryConfig
+    | BranchRouterConfig
+    | LayerScaleConfig,
     Field(discriminator="type"),
 ]
 
@@ -262,6 +385,16 @@ class TrainSchedule(BaseModel):
     improvement_tolerance: float = Field(default=1e-3, ge=0.0)
     ppl_stop_threshold: float | None = Field(default=2.5, ge=0.0)
     init_checkpoint: str | None = None
+    # Optional synthetic long-context evaluation (passkey probe)
+    passkey_eval_steps: int = Field(default=0, ge=0)
+    passkey_eval_batches: int = Field(default=8, ge=1)
+    passkey_eval_seq_len: int | None = Field(default=None, gt=0)
+    passkey_eval_min_distance: int = Field(default=128, ge=0)
+    passkey_eval_lr: float | None = Field(default=None, gt=0.0)
+    passkey_eval_batch_size: int | None = Field(default=None, gt=0)
+    passkey_eval_vocab_limit: int | None = Field(
+        default=None, gt=0, description="Optional cap on synthetic passkey token range."
+    )
 
     model_config = {"populate_by_name": True}
     optimizer: OptimizerConfig = Field(default_factory=lambda: OptimizerConfig())
@@ -296,6 +429,8 @@ class DataConfig(BaseModel):
     batch_size: int = Field(default=1, gt=0)
     workers: int = Field(default=2, ge=0)
     shards: list[DatasetShard] = Field(default_factory=list)
+    eval_shards: list[DatasetShard] = Field(default_factory=list)
+    eval_tokens: int | None = Field(default=None, gt=0)
     healing_shards: list[DatasetShard] = Field(default_factory=list)
     healing_tokens: int | None = Field(default=None, gt=0)
 
@@ -319,6 +454,7 @@ class ModelConfig(BaseModel):
     blocks: list[BlockConfig]
     head: HeadConfig
     norm: Literal["layernorm", "rmsnorm"] = "layernorm"
+    kv_policy: KVPolicyConfig | None = None
     recurrences: list[RecurrenceConfig] = Field(default_factory=list)
 
     @field_validator("blocks")
@@ -347,7 +483,7 @@ class EvolutionConfig(BaseModel):
     population: int = 12
     topk_keep: float = Field(default=0.33, gt=0.0, le=1.0)
     crossover_prob: float = Field(default=0.2, ge=0.0, le=1.0)
-    parent_selection: Literal["weighted", "pareto_uniform", "lexicase"] = "weighted"
+    parent_selection: Literal["weighted", "pareto_uniform", "lexicase", "map_elites"] = "weighted"
     pareto_objectives: list[str] = Field(
         default_factory=lambda: ["ppl_code", "ppl_math", "long_recall", "throughput", "ram"]
     )
@@ -362,6 +498,18 @@ class EvolutionConfig(BaseModel):
     promotion_min_router_entropy: float = Field(default=0.0, ge=0.0)
     promotion_min_recurrence_gain: float = Field(default=0.0)
     promotion_max_instability: float | None = Field(default=None, ge=0.0)
+    archive_max_elites: int = Field(default=0, ge=0)
+    adaptive_mutation: bool = False
+    adaptive_mutation_eta: float = Field(default=0.1, gt=0.0, le=1.0)
+    adaptive_mutation_min_weight: float = Field(default=0.05, gt=0.0)
+    adaptive_mutation_max_weight: float = Field(default=5.0, gt=0.0)
+    weight_inheritance: Literal["parent", "init", "scratch"] = "parent"
+
+    @model_validator(mode="after")
+    def validate_rung_tokens(self) -> EvolutionConfig:
+        if self.rung1_tokens > self.rung2_tokens:
+            raise ValueError("evolution.rung1_tokens must be <= evolution.rung2_tokens")
+        return self
 
 
 class PriorConfig(BaseModel):

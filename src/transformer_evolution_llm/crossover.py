@@ -42,6 +42,7 @@ def merge_checkpoints(
     parent_a_ckpt: Path | None,
     parent_b_ckpt: Path | None,
     out_path: Path,
+    checkpoint_dtype: str = "fp16",
 ) -> Path | None:
     model = EvolutionModel(child_spec.model)
     child_state = model.state_dict()
@@ -63,6 +64,18 @@ def merge_checkpoints(
             source_stop=parent_b_blocks,
             target_start=cut_a,
         )
+    key = (checkpoint_dtype or "fp16").lower()
+    if key in {"fp16", "float16"}:
+        dtype = torch.float16
+    elif key in {"bf16", "bfloat16"}:
+        dtype = torch.bfloat16
+    elif key in {"fp32", "float32"}:
+        dtype = torch.float32
+    else:
+        raise ValueError(f"Unsupported checkpoint_dtype: {checkpoint_dtype}")
+    for k, v in list(child_state.items()):
+        if v.is_floating_point():
+            child_state[k] = v.to(dtype=dtype)
     torch.save(child_state, out_path)
     return out_path
 
@@ -81,6 +94,6 @@ def _transfer_blocks(
                 new_idx = idx - source_start + target_start
                 new_key = key.replace(f"blocks.{idx}.", f"blocks.{new_idx}.", 1)
                 if new_key in child_state and child_state[new_key].shape == value.shape:
-                    child_state[new_key] = value.clone()
+                    child_state[new_key] = value.to(dtype=child_state[new_key].dtype).clone()
         elif target_start == 0 and key in child_state and child_state[key].shape == value.shape:
-            child_state[key] = value.clone()
+            child_state[key] = value.to(dtype=child_state[key].dtype).clone()
