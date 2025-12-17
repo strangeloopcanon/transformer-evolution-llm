@@ -1,0 +1,363 @@
+model:
+  name: phi-tiny-evo-creative
+  emb:
+    dim: 512
+    vocab: 50257
+    rope: null
+    dropout: 0.0
+  blocks:
+  - name: null
+    attn:
+      kind: GQA
+      heads: 8
+      head_dim: 64
+      rope: null
+      rope_theta: null
+      sw: null
+      kv_groups: 2
+      dropout: 0.0
+      qk_norm_max: null
+      gating_pos: none
+      gating_op: dense
+      sparsity: none
+      block_size: null
+      block_stride: null
+      global_stride: null
+      dilation: null
+      selector: none
+      selector_topk: null
+      selector_heads: null
+      selector_dim: null
+      selector_rope: none
+      selector_detach: false
+    ffn:
+      type: moe
+      hidden: 2048
+      n_experts: 16
+      k: 2
+      capacity_factor: 1.2
+      balance: 0.05
+      shared: 1
+      router_temperature: null
+      router_type: softmax
+      router_bias_detached: false
+      shared_expert: false
+      router_aux_weight: null
+      router_lb_weight: null
+      drop_policy: none
+      experts: []
+    ssm: null
+    extras:
+    - type: custom
+      name: exp-gater
+      params:
+        dim: 256
+  - name: null
+    attn:
+      kind: GQA
+      heads: 8
+      head_dim: 64
+      rope: yarn
+      rope_theta: null
+      sw: 128
+      kv_groups: 2
+      dropout: 0.0
+      qk_norm_max: null
+      gating_pos: none
+      gating_op: dense
+      sparsity: local_global
+      block_size: null
+      block_stride: null
+      global_stride: 64
+      dilation: null
+      selector: none
+      selector_topk: null
+      selector_heads: null
+      selector_dim: null
+      selector_rope: none
+      selector_detach: false
+    ffn:
+      type: dense
+      hidden: 2048
+      activation: swiglu
+      dropout: 0.0
+    ssm: null
+    extras:
+    - type: retro
+      memory_tokens: 256
+      stride: 32
+      aggregator: gate
+      gating_weight: 0.25
+  - name: null
+    attn:
+      kind: GQA
+      heads: 8
+      head_dim: 64
+      rope: null
+      rope_theta: null
+      sw: null
+      kv_groups: 2
+      dropout: 0.0
+      qk_norm_max: null
+      gating_pos: none
+      gating_op: dense
+      sparsity: none
+      block_size: null
+      block_stride: null
+      global_stride: null
+      dilation: null
+      selector: none
+      selector_topk: null
+      selector_heads: null
+      selector_dim: null
+      selector_rope: none
+      selector_detach: false
+    ffn:
+      type: moe
+      hidden: 2048
+      n_experts: 16
+      k: 2
+      capacity_factor: 1.2
+      balance: 0.05
+      shared: 1
+      router_temperature: null
+      router_type: softmax
+      router_bias_detached: false
+      shared_expert: false
+      router_aux_weight: null
+      router_lb_weight: null
+      drop_policy: none
+      experts: []
+    ssm: null
+    extras:
+    - type: custom
+      name: exp-gater
+      params:
+        dim: 256
+  - name: null
+    attn:
+      kind: GQA
+      heads: 8
+      head_dim: 64
+      rope: null
+      rope_theta: null
+      sw: null
+      kv_groups: 2
+      dropout: 0.0
+      qk_norm_max: null
+      gating_pos: none
+      gating_op: dense
+      sparsity: none
+      block_size: null
+      block_stride: null
+      global_stride: null
+      dilation: null
+      selector: none
+      selector_topk: null
+      selector_heads: null
+      selector_dim: null
+      selector_rope: none
+      selector_detach: false
+    ffn:
+      type: dense
+      hidden: 2048
+      activation: swiglu
+      dropout: 0.0
+    ssm:
+      kind: mamba2
+      d_state: 16
+      d_conv: 4
+      dt_rank: 8
+      chunk: 128
+      gate: 0.15
+    extras:
+    - type: retro
+      memory_tokens: 512
+      stride: 128
+      aggregator: attention
+      gating_weight: 0.1191520977835257
+  - name: null
+    attn:
+      kind: GQA
+      heads: 8
+      head_dim: 64
+      rope: null
+      rope_theta: null
+      sw: null
+      kv_groups: 2
+      dropout: 0.0
+      qk_norm_max: null
+      gating_pos: none
+      gating_op: dense
+      sparsity: none
+      block_size: null
+      block_stride: null
+      global_stride: null
+      dilation: null
+      selector: none
+      selector_topk: null
+      selector_heads: null
+      selector_dim: null
+      selector_rope: none
+      selector_detach: false
+    ffn:
+      type: moe
+      hidden: 2048
+      n_experts: 16
+      k: 2
+      capacity_factor: 1.2
+      balance: 0.05
+      shared: 1
+      router_temperature: null
+      router_type: softmax
+      router_bias_detached: false
+      shared_expert: false
+      router_aux_weight: null
+      router_lb_weight: null
+      drop_policy: none
+      experts: []
+    ssm: null
+    extras:
+    - type: custom
+      name: exp-gater
+      params:
+        dim: 256
+  - name: null
+    attn:
+      kind: GQA
+      heads: 8
+      head_dim: 64
+      rope: null
+      rope_theta: null
+      sw: null
+      kv_groups: 2
+      dropout: 0.0
+      qk_norm_max: null
+      gating_pos: none
+      gating_op: dense
+      sparsity: none
+      block_size: null
+      block_stride: null
+      global_stride: null
+      dilation: null
+      selector: none
+      selector_topk: null
+      selector_heads: null
+      selector_dim: null
+      selector_rope: none
+      selector_detach: false
+    ffn:
+      type: dense
+      hidden: 2048
+      activation: swiglu
+      dropout: 0.0
+    ssm: null
+    extras:
+    - type: retro
+      memory_tokens: 1024
+      stride: 64
+      aggregator: gate
+      gating_weight: 0.35
+  head:
+    tie_embeddings: true
+    vocab: 50257
+  norm: layernorm
+  recurrences: []
+train:
+  lr: 0.0008
+  warmup: 500
+  clip: 1.0
+  bf16: true
+  grad_checkpoint: true
+  max_tokens: 520000
+  weight_decay: 0.02
+  seed: 4242
+  router_lb_coeff: 0.01
+  router_entropy_coeff: 0.005
+  entropy_threshold: 0.5
+  entropy_patience: 3
+  instability_threshold: 500.0
+  no_improve_patience: 20
+  improvement_tolerance: 0.001
+  ppl_stop_threshold: null
+  init_checkpoint: null
+  optimizer:
+    name: adamw
+    lr: null
+    betas: null
+    eps: null
+    weight_decay: null
+data:
+  tokenizer: gpt2
+  hf_revision: main
+  seq_len: 512
+  batch_size: 1
+  workers: 0
+  shards:
+  - name: ag_news
+    split: train
+    weight: 0.25
+    cache_path: null
+    revision: null
+  - name: wikitext
+    split: wikitext-2-raw-v1
+    weight: 0.35
+    cache_path: null
+    revision: null
+  - name: mbpp
+    split: train
+    weight: 0.4
+    cache_path: null
+    revision: null
+  healing_shards: []
+  healing_tokens: null
+evolution:
+  rung0_thresholds:
+    gate_entropy_min: 0.0
+    gate_entropy_max: 4.0
+  rung1_tokens: 300000
+  rung2_tokens: 900000
+  population: 24
+  topk_keep: 0.45
+  crossover_prob: 0.5
+  parent_selection: lexicase
+  pareto_objectives:
+  - ppl_code
+  - ppl_math
+  - long_recall
+  - ppl_per_long_recall
+  - throughput
+  - ram
+  - novelty
+  - graph_entropy
+  objectives:
+    ppl_code: min
+    ppl_math: min
+    long_recall: max
+    ppl_per_long_recall: min
+    throughput: max
+    ram: min
+    novelty: max
+    graph_entropy: max
+    instability: min
+  composite_metrics:
+  - name: ppl_per_long_recall
+    op: ratio
+    numerator: ppl_code
+    denominator: long_recall
+    terms: {}
+    epsilon: 0.1
+  promotion_prob: 0.4
+  promotion_min_layers: 8
+  promotion_min_moe_blocks: 2
+  promotion_steps_multiplier: 1.5
+  promotion_tokens_multiplier: 1.5
+  promotion_min_router_entropy: 0.0
+  promotion_min_recurrence_gain: 0.0
+  promotion_max_instability: null
+priors:
+  tokens_per_param: 4.0
+  window_scale: 6.0
+  rope_theta_default: 10000.0
+  prior_weight: 0.0
+  compute_penalty_weight: 0.0
