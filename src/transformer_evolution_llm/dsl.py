@@ -63,6 +63,11 @@ class AttentionConfig(BaseModel):
     selector_dim: int | None = Field(default=None, gt=0)
     selector_rope: Literal["none", "partial", "full"] = "none"
     selector_detach: bool = False
+    # Higher-level attention knobs (declarative; not fully wired yet)
+    stencil: StencilConfig | None = None
+    softmax: SoftmaxConfig | None = None
+    projection: ProjectionConfig | None = None
+    value_glu: bool | None = None
 
     model_config = {"populate_by_name": True, "extra": "ignore"}
 
@@ -134,6 +139,273 @@ class KVPolicyConfig(BaseModel):
         if self.cache == "latent" and self.latent_dim is None:
             raise ValueError("kv_policy.cache=latent requires kv_policy.latent_dim")
         return self
+
+
+class StencilConfig(BaseModel):
+    """Macro attention stencil descriptor (declarative).
+
+    This does not currently override the runtime `sparsity` implementation; it
+    exists to express richer sparse patterns (ring/hybrid/cross) for future
+    wiring and for downstream tooling.
+    """
+
+    kind: Literal[
+        "full",
+        "local",
+        "dilated",
+        "block",
+        "ring",
+        "hybrid",
+        "sliding",
+        "cross",
+    ] = "full"
+    window: int | None = Field(default=None, gt=0)
+    dilation: int | None = Field(default=None, gt=0)
+    block: int | None = Field(default=None, gt=0)
+    stride: int | None = Field(default=None, gt=0)
+    globals: int | None = Field(default=None, gt=0)
+    query: str | None = None
+    key: str | None = None
+
+    @model_validator(mode="after")
+    def validate_stencil(self) -> StencilConfig:
+        if self.kind == "ring" and self.block is None:
+            raise ValueError("stencil.kind=ring requires stencil.block")
+        if self.kind == "cross" and (self.query is None or self.key is None):
+            raise ValueError("stencil.kind=cross requires stencil.query and stencil.key")
+        return self
+
+
+class SoftmaxKernelConfig(BaseModel):
+    """Kernelized softmax approximation descriptor (declarative)."""
+
+    name: Literal["favor", "gaussian", "laplace"] | None = None
+    features: int | None = Field(default=None, gt=0)
+    redraw: int | None = Field(default=None, gt=0)
+    orthogonal: bool | None = None
+
+
+class SoftmaxConfig(BaseModel):
+    """Softmax/QK normalization policy (declarative)."""
+
+    type: Literal["standard", "kernel", "scaled"] = "standard"
+    qk_scale: float | str | None = None
+    qk_norm: Literal["none", "rms", "layer"] = "none"
+    softcap: float | None = Field(default=None, gt=0.0)
+    kernel: SoftmaxKernelConfig | None = None
+
+    @model_validator(mode="after")
+    def validate_softmax(self) -> SoftmaxConfig:
+        if self.type == "kernel" and (self.kernel is None or self.kernel.features is None):
+            raise ValueError("softmax.type=kernel requires softmax.kernel.features")
+        return self
+
+
+class ProjectionConfig(BaseModel):
+    """Low-rank projection descriptor (declarative).
+
+    Intended for LoRA/low-rank attention projections in future wiring.
+    """
+
+    type: Literal["low_rank", "none"] = "none"
+    rank: int | None = Field(default=None, gt=0)
+    shared: bool | None = None
+
+    @model_validator(mode="after")
+    def validate_projection(self) -> ProjectionConfig:
+        if self.type == "low_rank" and self.rank is None:
+            raise ValueError("projection.type=low_rank requires projection.rank")
+        return self
+
+
+class MixRouterConfig(BaseModel):
+    """Router knobs for macro mix units (declarative)."""
+
+    topk: int | None = Field(default=None, gt=0)
+    temp: float | None = Field(default=None, gt=0.0)
+    balance: float | None = Field(default=None, ge=0.0)
+
+
+class MixerConfig(BaseModel):
+    """High-level mixer descriptor (declarative).
+
+    This mirrors upstream-style mixer specification (Attention/Retention/SSM/LongConv),
+    but does not currently override per-block runtime components.
+    """
+
+    kind: Literal["Attention", "Retention", "SSM", "LongConv"]
+    heads: int | None = Field(default=None, gt=0)
+    groups: int | None = Field(default=None, ge=1)
+    head_dim: int | None = Field(default=None, gt=0)
+    stencil: StencilConfig | None = None
+    softmax: SoftmaxConfig | None = None
+    pos: str | None = None
+    chunk: int | None = Field(default=None, gt=0)
+    mode: Literal["parallel", "recurrent"] | None = None
+    d_state: int | None = Field(default=None, gt=0)
+    expand: float | None = Field(default=None, gt=0.0)
+    kernel_len: int | None = Field(default=None, gt=0)
+    projection: ProjectionConfig | None = None
+    value_glu: bool | None = None
+
+    @model_validator(mode="after")
+    def validate_mixer(self) -> MixerConfig:
+        if self.kind == "Attention" and self.mode not in {None, "parallel"}:
+            raise ValueError("Attention mixers must use mode=parallel")
+        if self.kind in {"Retention", "SSM"} and self.mode == "recurrent":
+            return self
+        if self.mode == "recurrent" and self.kind not in {"Retention", "SSM"}:
+            raise ValueError("Only Retention/SSM mixers may set mode=recurrent")
+        if self.groups is not None and self.heads is not None and self.groups > self.heads:
+            raise ValueError("mixer.groups cannot exceed mixer.heads")
+        return self
+
+
+class MixUnitConfig(BaseModel):
+    """Compose mixers as single / parallel / routed units (declarative)."""
+
+    kind: Literal["single", "par", "route"] = "single"
+    mixer: MixerConfig | None = None
+    choices: list[MixerConfig] | None = None
+    merge: Literal["Add", "WeightedAdd", "Concat"] | None = None
+    router: MixRouterConfig | None = None
+
+    @model_validator(mode="after")
+    def validate_mix_unit(self) -> MixUnitConfig:
+        if self.kind == "single":
+            if self.mixer is None:
+                raise ValueError("mix_unit.kind=single requires mix_unit.mixer")
+        else:
+            if not self.choices:
+                raise ValueError(f"mix_unit.kind={self.kind} requires mix_unit.choices")
+            if self.kind == "route" and self.router is None:
+                raise ValueError("mix_unit.kind=route requires mix_unit.router")
+            if self.kind == "par" and self.merge is None:
+                raise ValueError("mix_unit.kind=par requires mix_unit.merge")
+        return self
+
+
+class ResidualConfig(BaseModel):
+    """Residual/topology descriptor (declarative)."""
+
+    kind: Literal["single", "dual", "deepnet"] = "single"
+    pre_ln: bool | None = None
+    post_ln: bool | None = None
+    scale: float | None = Field(default=None, gt=0.0)
+
+    @model_validator(mode="after")
+    def validate_residual(self) -> ResidualConfig:
+        if self.kind == "dual":
+            if not (self.pre_ln and self.post_ln):
+                raise ValueError("residual.kind=dual requires pre_ln and post_ln enabled")
+        if self.kind == "deepnet" and self.scale is None:
+            raise ValueError("residual.kind=deepnet requires residual.scale")
+        return self
+
+
+class HierarchyLevelConfig(BaseModel):
+    """One hierarchy level (declarative)."""
+
+    every: int = Field(ge=1)
+    downsample: float | None = Field(default=None, gt=0.0)
+    up_proj: bool | None = None
+
+
+class HierarchyConfig(BaseModel):
+    """Hierarchical downsample/upsample descriptor (declarative)."""
+
+    levels: list[HierarchyLevelConfig] = Field(default_factory=list)
+
+    @field_validator("levels")
+    @classmethod
+    def non_empty(cls, value: list[HierarchyLevelConfig]) -> list[HierarchyLevelConfig]:
+        if not value:
+            raise ValueError("hierarchy.levels must be non-empty")
+        return value
+
+
+class DepthRouterConfig(BaseModel):
+    """Dynamic depth routing descriptor (declarative)."""
+
+    kind: Literal["token", "layer", "none"] = "none"
+    budget: float | None = Field(default=None, gt=0.0)
+    tau: float | None = Field(default=None, gt=0.0)
+    min_layers: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def validate_router(self) -> DepthRouterConfig:
+        if self.kind != "none" and self.budget is None:
+            raise ValueError("depth_router.kind!=none requires depth_router.budget")
+        return self
+
+
+class CondSourceConfig(BaseModel):
+    """Conditioning input source (declarative)."""
+
+    kind: Literal["pool_mlp", "segment"] = "pool_mlp"
+    hidden: int | None = Field(default=None, gt=0, alias="H")
+    segment: int | None = Field(default=None, ge=0)
+
+    model_config = {"populate_by_name": True}
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_kind(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            kind = data.get("kind")
+            if kind == "pool-mlp":
+                data = dict(data)
+                data["kind"] = "pool_mlp"
+        return data
+
+
+class CondOpConfig(BaseModel):
+    """One conditioning operation (declarative)."""
+
+    where: Literal[
+        "pre_mixer",
+        "post_mixer",
+        "ln",
+        "proj_q",
+        "proj_v",
+        "q",
+        "v",
+        "token",
+    ]
+    op: Literal["film", "add", "scale", "lora"]
+    share: Literal["global", "per_channel", "per_head"] | None = None
+    r: int | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def validate_op(self) -> CondOpConfig:
+        if self.op == "lora" and self.r is None:
+            raise ValueError("cond.ops op=lora requires r")
+        return self
+
+
+class CondRegConfig(BaseModel):
+    """Conditioning regularizer descriptor (declarative)."""
+
+    kind: Literal["freebits", "none"] = "none"
+    kappa: float | None = Field(default=None, gt=0.0)
+
+
+class CondConfig(BaseModel):
+    """Conditioning policy (declarative)."""
+
+    source: CondSourceConfig | None = None
+    reg: CondRegConfig | None = None
+    ops: list[CondOpConfig] | None = None
+
+
+class MacroConfig(BaseModel):
+    """Optional macro-architecture descriptors (declarative; not fully wired)."""
+
+    mix_unit: MixUnitConfig | None = None
+    residual: ResidualConfig | None = None
+    hierarchy: HierarchyConfig | None = None
+    depth_router: DepthRouterConfig | None = None
+    cond: CondConfig | None = None
 
 
 class DenseFFNConfig(BaseModel):
@@ -455,6 +727,7 @@ class ModelConfig(BaseModel):
     head: HeadConfig
     norm: Literal["layernorm", "rmsnorm"] = "layernorm"
     kv_policy: KVPolicyConfig | None = None
+    macro: MacroConfig | None = None
     recurrences: list[RecurrenceConfig] = Field(default_factory=list)
 
     @field_validator("blocks")

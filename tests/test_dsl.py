@@ -4,8 +4,24 @@ from transformer_evolution_llm import api
 from transformer_evolution_llm.dsl import (
     ArchitectureSpec,
     BlockConfig,
+    CondConfig,
+    CondOpConfig,
+    CondRegConfig,
+    CondSourceConfig,
     CustomModuleConfig,
     DenseFFNConfig,
+    DepthRouterConfig,
+    HierarchyConfig,
+    HierarchyLevelConfig,
+    KVPolicyConfig,
+    MacroConfig,
+    MixerConfig,
+    MixUnitConfig,
+    ProjectionConfig,
+    ResidualConfig,
+    SoftmaxConfig,
+    SoftmaxKernelConfig,
+    StencilConfig,
 )
 
 
@@ -29,3 +45,54 @@ def test_block_accepts_custom_extras() -> None:
         extras=[CustomModuleConfig(name="wild", params={"depth": 2})],
     )
     assert block.extras[0].name == "wild"
+
+
+def test_macro_primitives_roundtrip(tiny_spec: ArchitectureSpec, tmp_path: Path) -> None:
+    spec = tiny_spec
+    spec.model.kv_policy = KVPolicyConfig(cache="window", window=4096, quant="nf4")
+    spec.model.macro = MacroConfig(
+        depth_router=DepthRouterConfig(kind="token", budget=0.7, tau=1.0, min_layers=1),
+        hierarchy=HierarchyConfig(
+            levels=[HierarchyLevelConfig(every=4, downsample=0.5, up_proj=True)]
+        ),
+        residual=ResidualConfig(kind="single", pre_ln=True),
+        cond=CondConfig(
+            source=CondSourceConfig(kind="pool-mlp", H=128),
+            reg=CondRegConfig(kind="freebits", kappa=0.5),
+            ops=[CondOpConfig(where="pre_mixer", op="lora", r=4)],
+        ),
+        mix_unit=MixUnitConfig(
+            kind="par",
+            merge="WeightedAdd",
+            choices=[
+                MixerConfig(
+                    kind="Attention",
+                    heads=4,
+                    head_dim=32,
+                    stencil=StencilConfig(kind="sliding", window=256, stride=64),
+                    softmax=SoftmaxConfig(
+                        type="kernel",
+                        qk_norm="rms",
+                        kernel=SoftmaxKernelConfig(name="favor", features=64),
+                    ),
+                    projection=ProjectionConfig(type="low_rank", rank=8),
+                ),
+                MixerConfig(kind="Retention", heads=4, head_dim=32, chunk=512, mode="parallel"),
+            ],
+        ),
+    )
+
+    spec_path = tmp_path / "spec.yaml"
+    api.save_spec(spec, spec_path)
+    loaded = api.load_spec(spec_path)
+    assert loaded.model.kv_policy is not None
+    assert loaded.model.kv_policy.cache == "window"
+    assert loaded.model.kv_policy.quant == "nf4"
+    assert loaded.model.macro is not None
+    assert loaded.model.macro.depth_router is not None
+    assert loaded.model.macro.depth_router.kind == "token"
+    assert loaded.model.macro.hierarchy is not None
+    assert loaded.model.macro.hierarchy.levels[0].every == 4
+    assert loaded.model.macro.cond is not None
+    assert loaded.model.macro.cond.source is not None
+    assert loaded.model.macro.cond.source.kind == "pool_mlp"

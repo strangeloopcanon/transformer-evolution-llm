@@ -47,6 +47,7 @@ For a more detailed overview of how different evolutionary runs behaved – incl
 
 - Reproduce the latest sweep (above) or export a seed for scaling: `scripts/export_seed.py <frontier_path> --id <candidate_id> --out seeds/<name>.pt`.
 - Inspect frontier/lineage: `runs/frontier_phi_entropy_v2.json`, `runs/frontier_phi_entropy_v2_lineage.json`.
+- Export the DSL JSON Schema (for editor tooling/validation): `PYTHONPATH=src .venv/bin/python scripts/export_dsl_schema.py docs/dsl_schema.json`.
 - Run a long-context motif discovery sweep on Mac (MPS): see `configs/exp_longctx_overnight_m4_unbiased.yaml` and the “Long-context discovery run (Mac M4 / MPS)” section below.
 - Reclaim disk: new runs save checkpoints as fp16 by default; for older runs use `python -m transformer_evolution_llm.cli cleanup-run runs/<run>.manifest.json --keep frontier+state --apply` and/or `python -m transformer_evolution_llm.cli convert-checkpoints runs/<checkpoint_dir> --dtype fp16 --apply`.
 - For a longer SOTA-oriented sweep on a bigger box: reuse `configs/seed_xover-48-9237.yaml` but raise `--generations` (e.g., 200–240), `--steps` (320–384), and consider bumping `rung1_tokens/rung2_tokens` in the config (e.g., 0.6M / 1.8–3.6M) with `promotion_min_layers>=8`, `promotion_min_moe_blocks>=2`; set `--device cuda` if available.
@@ -145,6 +146,25 @@ So what: once we’re happy with local motif discovery, we can add an optional �
 - Global normalization: set `model.norm: layernorm|rmsnorm`.
 - KV compression: `attn.kv_groups` can be tuned by evolution (e.g., 1/2/4) to reduce KV cache.
 - RoPE base: `attn.rope_theta` adjusts the rotational base (default 10000); mutations can jitter it.
+
+### Macro primitives (declarative)
+
+The DSL also includes an optional `model.kv_policy` plus a `model.macro` section for richer SOTA-style ideas (depth routing, hierarchy/downsampling, parallel/route mixer descriptions, conditioning, and residual variants). These fields are validated, serialized, and included in the JSON Schema/lineage, but are **not yet wired into the training forward pass**.
+
+```yaml
+model:
+  kv_policy: {cache: window, window: 8192, quant: nf4}
+  macro:
+    depth_router: {kind: token, budget: 0.7, tau: 1.0, min_layers: 4}
+    hierarchy: {levels: [{every: 4, downsample: 0.5, up_proj: true}]}
+    residual: {kind: single, pre_ln: true}
+    mix_unit:
+      kind: par
+      merge: WeightedAdd
+      choices:
+        - {kind: Attention, heads: 8, head_dim: 64}
+        - {kind: Retention, heads: 8, head_dim: 64, chunk: 512, mode: parallel}
+```
 
 ### Optimizers (run-level option)
 
