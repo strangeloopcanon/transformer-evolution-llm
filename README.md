@@ -5,6 +5,18 @@ An autonomous evolution loop that invents new LLM blueprints. This system uses a
 
 Instead of just tuning hyperparameters, this project evolves the *topology* of the model itself—inserting memory blocks, switching attention types (dense/sparse/linear), toggling MoE/SSM layers, and wiring complex residual paths—while reusing weights to avoid training from scratch.
 
+## Why This Exists
+
+**Manual architecture design is slow and biased by what we already know.** Every major LLM architecture—from vanilla Transformers to modern innovations like [DeepSeek's MoE routing](https://arxiv.org/abs/2401.06066), [Google's Titans](https://arxiv.org/abs/2501.00663) with neural long-term memory, or hybrid SSM-attention models—was discovered through expensive human intuition and trial-and-error.
+
+This project asks: *what if we let evolution discover these building blocks automatically?*
+
+- **Architecture search, not hyperparameter tuning**: We mutate the actual structure—adding memory modules, swapping attention types, inserting routing layers—not just learning rates or widths.
+- **Lamarckian speedup**: Children inherit trained weights from parents, so evolution doesn't restart training from scratch each generation.
+- **Multi-objective exploration**: The Pareto frontier tracks trade-offs across perplexity, throughput, memory, and structural complexity—no single "best" model, but a menu of options.
+
+The goal is to use laptop-scale surrogates (~65–100M params) as a fast "architecture microscope" to discover promising motifs that can then be scaled up.
+
 ## Key Features
 
 - **Typed DSL**: Architectures are defined in YAML/JSON using a strict Pydantic-based schema (`src/transformer_evolution_llm/dsl.py`), ensuring all generated candidates are valid by construction.
@@ -61,7 +73,7 @@ python scripts/report_motifs.py "$RUN/frontier.json" --lineage "$RUN/frontier_li
 ```
 
 ### 2. Run a Long-Context Sweep (Mac M4 / MPS)
-This matches the “newest long‑context frontier” section below and is designed to stay disk-safe by pruning checkpoints to just the frontier.
+This matches the "newest long‑context frontier" section below and is designed to stay disk-safe by pruning checkpoints to just the frontier.
 
 ```bash
 export TOKENIZERS_PARALLELISM=false
@@ -91,6 +103,65 @@ If you want to archive the discovered specs and reclaim disk immediately after t
 ```bash
 python scripts/archive_run.py "$RUN" --delete-checkpoints
 ```
+
+## System Architecture
+
+The evolution loop follows this flow:
+
+```mermaid
+flowchart LR
+    subgraph Evolution Loop
+        SEED[Seed Config] --> MUT[Mutate/Crossover]
+        MUT --> TRAIN[Train Rungs 0→1→2]
+        TRAIN --> EVAL[Evaluate Metrics]
+        EVAL --> SELECT[Pareto Selection]
+        SELECT --> |Next Gen| MUT
+    end
+    SELECT --> FRONTIER[Pareto Frontier]
+    FRONTIER --> EXPORT[Export Winners]
+```
+
+### Components
+
+1.  **Declarative Spec (DSL)**: The `dsl.py` module defines the genome. It describes the model topology (blocks, layers, mixers) and training hyperparameters.
+2.  **Evolution Loop**: `orchestrator.py` manages the population. It selects parents using strategies like weighted sampling, `pareto_uniform`, `lexicase`, and `map_elites`.
+3.  **Mutation & Crossover**:
+    *   `mutations.py`: Modifies the DSL (e.g., changes a layer from Dense Attention to MoE).
+    *   `crossover.py`: Splices two architectures and intelligently merges their state dicts.
+4.  **Evaluation (Rungs)**: Candidates pass through "rungs" of increasing cost.
+    *   **Static Analysis**: Cheap checks for params/flops.
+    *   **Rung 0/1**: Short training runs to filter unstable or poor-performing models.
+    *   **Full Training**: Longer runs for promising candidates.
+5.  **Pareto Frontier**: The system maintains a set of non-dominated solutions (e.g., best perplexity for a given parameter count) in `frontier.json`.
+
+## Configuration Reference
+
+Experiments are configured via YAML files in `configs/`. The main sections are:
+
+| Section | Purpose | Key Fields |
+|---------|---------|------------|
+| `model` | Architecture spec | `emb` (embedding), `blocks` (layer configs), `head` |
+| `train` | Training hyperparams | `lr`, `warmup`, `max_tokens`, `instability_threshold` |
+| `data` | Dataset config | `tokenizer`, `seq_len`, `batch_size`, `shards` |
+| `evolution` | Evolution settings | `population`, `rung1_tokens`, `rung2_tokens`, `pareto_objectives` |
+
+Example minimal config structure:
+```yaml
+model:
+  name: my-experiment
+  emb: { dim: 256, vocab: 50257 }
+  blocks:
+    - attn: { kind: GQA, heads: 8, head_dim: 32 }
+      ffn: { type: moe, hidden: 1024, n_experts: 4, k: 2 }
+train:
+  lr: 0.001
+  max_tokens: 65536
+evolution:
+  population: 8
+  pareto_objectives: [ppl_code, throughput, ram]
+```
+
+See [`src/transformer_evolution_llm/dsl.py`](src/transformer_evolution_llm/dsl.py) for the full schema definition.
 
 ## Newest Long-Context Frontier (Illustrative Survivors)
 
@@ -155,6 +226,25 @@ flowchart LR
   LS3 --> O3
 ```
 
+## Scientific Goals & Findings
+
+### What we set out to learn
+- Can we evolve genuinely new LLM blueprints—beyond familiar transformer tweaks—using only ~100 M parameter surrogates?
+- Do hybrids (retro memory + sparse attention + MoE/SSM toggles) outperform single tricks when tokens are scarce?
+- Is a fully-auditable lineage enough to explain breakthroughs?
+
+### What we're seeing so far
+- **Explicit memory is stable**: When long-context probes are used, survivors almost always carry memory primitives (retro + token/chunk/assoc variants).
+- **Selection pressure dominates**: Different selection strategies (`map_elites` vs. lexicase) maintain different niches.
+- **Convergent Evolution**: The system reliably rediscovers known distinct classes of building blocks (explicit memory, routing/gating, depth reuse) without being explicitly told to look for them.
+
+### So what (what this implies)
+- These runs are an *architecture microscope*: at ~65–85M params and a few hundred steps, the loop finds convergent motifs (memory, routing/gating, depth reuse) without being told to chase any named target.
+- The frontier is a function of constraints: rung0 gates (params/KV/throughput + optional minima) decide what survives long enough to train; objective weights decide what gets rewarded.
+- When a motif appears in lineage but not the frontier, it's usually filtered by instability (NaNs) or rung0 gates before it can pay off; relaxing gates or increasing rung budgets changes the reachable regime.
+
+For more detailed takeaways, see [docs/evolution_takeaways.md](docs/evolution_takeaways.md).
+
 ## Project Structure
 
 The codebase is separated into the core library (`src/`) and execution scripts (`scripts/`).
@@ -177,39 +267,7 @@ The codebase is separated into the core library (`src/`) and execution scripts (
 └── tests/                    # Pytest suite
 ```
 
-## System Architecture
-
-1.  **Declarative Spec (DSL)**: The `dsl.py` module defines the genome. It describes the model topology (blocks, layers, mixers) and training hyperparameters.
-2.  **Evolution Loop**: `orchestrator.py` manages the population. It selects parents using strategies like weighted sampling, `pareto_uniform`, `lexicase`, and `map_elites`.
-3.  **Mutation & Crossover**:
-    *   `mutations.py`: Modifies the DSL (e.g., changes a layer from Dense Attention to MoE).
-    *   `crossover.py`: Splices two architectures and intelligently merges their state dicts.
-4.  **Evaluation (Rungs)**: Candidates pass through "rungs" of increasing cost.
-    *   **Static Analysis**: Cheap checks for params/flops.
-    *   **Rung 0/1**: Short training runs to filter unstable or poor-performing models.
-    *   **Full Training**: Longer runs for promising candidates.
-5.  **Pareto Frontier**: The system maintains a set of non-dominated solutions (e.g., best perplexity for a given parameter count) in `frontier.json`.
-
-## Scientific Goals & Findings
-
-### What we set out to learn
-- Can we evolve genuinely new LLM blueprints—beyond familiar transformer tweaks—using only ~100 M parameter surrogates?
-- Do hybrids (retro memory + sparse attention + MoE/SSM toggles) outperform single tricks when tokens are scarce?
-- Is a fully-auditable lineage enough to explain breakthroughs?
-
-### What we’re seeing so far
-- **Explicit memory is stable**: When long-context probes are used, survivors almost always carry memory primitives (retro + token/chunk/assoc variants).
-- **Selection pressure dominates**: Different selection strategies (`map_elites` vs. lexicase) maintain different niches.
-- **Convergent Evolution**: The system reliably rediscovers known distinct classes of building blocks (explicit memory, routing/gating, depth reuse) without being explicitly told to look for them.
-
-### So what (what this implies)
-- These runs are an *architecture microscope*: at ~65–85M params and a few hundred steps, the loop finds convergent motifs (memory, routing/gating, depth reuse) without being told to chase any named target.
-- The frontier is a function of constraints: rung0 gates (params/KV/throughput + optional minima) decide what survives long enough to train; objective weights decide what gets rewarded.
-- When a motif appears in lineage but not the frontier, it’s usually filtered by instability (NaNs) or rung0 gates before it can pay off; relaxing gates or increasing rung budgets changes the reachable regime.
-
-For more detailed takeaways, see [docs/evolution_takeaways.md](docs/evolution_takeaways.md).
-
-## Usage & workflows
+## Usage & Workflows
 
 ### Inspecting Results
 The output JSON files contain the full frontier. You can inspect the lineage or export specific candidates.
@@ -237,20 +295,33 @@ python scripts/run_live.py configs/seed_winner.yaml \
 Runs can accumulate checkpoints quickly. Useful cleanup tools:
 
 ```bash
-# Archive a run’s frontier specs to configs/frontiers/<run_name>/ and delete checkpoints.
+# Archive a run's frontier specs to configs/frontiers/<run_name>/ and delete checkpoints.
 python scripts/archive_run.py runs/<run_dir> --delete-checkpoints
 
 # Downcast checkpoints to shrink disk usage (fp16 works well on MPS).
 evo-loop convert-checkpoints runs/<run_dir>/checkpoints --dtype fp16 --apply
 ```
 
-### Configuration
-Experiments are configured via YAML files in `configs/`. Key sections:
-- `evolution`: Population size, mutation rates, selection strategy.
-- `model`: Base architecture constraints (max params, layer counts).
-- `train`: Learning rates, schedulers, objectives (e.g., `score_weight_throughput`).
+## What's Next / Roadmap
 
-See `src/transformer_evolution_llm/dsl.py` for the full schema definition.
+### Scale-Hop Plans
+The current phase runs on laptop-scale surrogates (~65–100M parameters). The next steps:
+1. **350M–1B sanity runs** on GPU (see [docs/gpu_run_plan.md](docs/gpu_run_plan.md))—validate that motifs discovered at small scale transfer.
+2. **Speedrun-style eval**: Measure time-to-target under a NanoGPT-like recipe, so architectures are judged on training efficiency.
+3. **Multi-GPU evolution** with ZeRO-1 or FSDP for larger populations.
+
+### Architectures of Interest
+
+This project can help explore ideas from recent architecture innovations:
+
+| Architecture | Key Ideas | DSL Components |
+|--------------|-----------|----------------|
+| [**Titans**](https://arxiv.org/abs/2501.00663) (Google) | Neural long-term memory, attention-as-memory | `retro`, `assoc_memory`, `memory_tokens` |
+| [**DeepSeek MoE**](https://arxiv.org/abs/2401.06066) | Fine-grained experts, shared expert routing | `moe` FFN, `router` configs, `shared` experts |
+| [**Mamba/SSM hybrids**](https://arxiv.org/abs/2312.00752) | State-space models mixed with attention | `ssm` blocks, `toggle_ssm` mutations |
+| [**MLA (Multi-head Latent Attention)**](https://arxiv.org/abs/2405.04434) | Latent KV compression | `MLA` attention kind, `kv_policy` |
+
+The evolution loop can rediscover these patterns—or find novel combinations.
 
 ## Contributing
 
@@ -261,13 +332,123 @@ We welcome contributions! Please see [AGENTS.md](AGENTS.md) for our operational 
 - **Format + lint + types + security**: `make check`
 - **Tests**: `make test`
 
+---
+
 ## Appendix
+
+<details>
+<summary>Glossary & Key Concepts</summary>
+
+### Core Terms
+
+| Term | Definition |
+|------|------------|
+| **DSL** | Domain-Specific Language—the typed YAML/JSON schema for specifying architectures. See `dsl.py`. |
+| **Rungs** | Tiered evaluation budgets. Rung 0 = static analysis (cheap), Rung 1 = short training, Rung 2 = full training. Candidates are promoted through rungs if they pass gates. |
+| **Pareto Frontier** | The set of non-dominated solutions across multiple objectives. A candidate is on the frontier if no other candidate beats it on *all* objectives. |
+| **Lamarckian Inheritance** | Children inherit trained weights from parents (not just the genome). This dramatically reduces compute since we don't train from scratch. |
+| **Mutations** | Genetic operators that modify architecture specs: `dense_to_moe`, `add_recurrence`, `toggle_ssm`, etc. See `mutations.py`. |
+| **Crossover** | Splicing two parent architectures to create a child with features from both. Includes intelligent weight merging. |
+
+### Architecture Components
+
+| Component | Description |
+|-----------|-------------|
+| **MoE (Mixture of Experts)** | FFN with multiple "expert" sub-networks; a router selects top-k experts per token. |
+| **SSM (State Space Model)** | Mamba-style recurrent layers as an alternative to attention. |
+| **MLA (Multi-head Latent Attention)** | Attention with compressed/latent KV projections (DeepSeek-style). |
+| **Retro** | Retrieval-augmented memory that caches and retrieves past hidden states. |
+| **Selectors** | Sparse attention variants that select a subset of tokens to attend to. |
+
+</details>
+
+<details>
+<summary>CLI Reference (evo-loop)</summary>
+
+The package installs an `evo-loop` CLI tool with several subcommands:
+
+```bash
+# Convert checkpoints to a different dtype (e.g., fp16 to save disk)
+evo-loop convert-checkpoints runs/<run>/checkpoints --dtype fp16 --apply
+
+# Other commands (run with --help for details)
+evo-loop --help
+```
+
+### Main Script: `scripts/run_live.py`
+
+Key arguments:
+```
+--device          Device to use (cpu, cuda, mps)
+--generations     Number of evolution generations
+--steps           Training steps per candidate
+--eval-batches    Number of batches for evaluation
+--seed            Random seed
+--out             Output frontier JSON path
+--lineage-out     Output lineage JSON path
+--checkpoint-dir  Directory for model checkpoints
+--prune-checkpoints-to-frontier  Delete non-frontier checkpoints after run
+--mutation-steps  Number of mutations to chain per child
+--parent-selection  Selection strategy (weighted, pareto_uniform, lexicase, map_elites)
+```
+
+</details>
+
+<details>
+<summary>Troubleshooting</summary>
+
+### Common Issues
+
+**Tokenizer warnings (`TOKENIZERS_PARALLELISM`)**
+```bash
+export TOKENIZERS_PARALLELISM=false
+```
+
+**Out of Memory (OOM)**
+- Reduce `batch_size` in config
+- Enable `grad_ckpt: true` in train config
+- Use `--device cpu` for smoke tests
+
+**NaN losses / Instability**
+- Lower `instability_threshold` in train config to catch unstable models earlier
+- Check that learning rate isn't too high
+- Some mutations produce unstable architectures—this is expected; they get filtered
+
+**MPS (Apple Silicon) quirks**
+- Some operations fall back to CPU; this is normal
+- FlashAttention doesn't work on MPS; uses PyTorch SDPA instead
+- fp16 checkpoints work well for disk savings
+
+**CUDA out of memory**
+- Reduce population size
+- Use gradient checkpointing
+- Try smaller `max_tokens` budget
+
+### Debugging tips
+- Check `runs/<run>/live.log` for detailed output
+- Use `--generations 1` to test a single generation
+- The `stop_reason` field in frontier.json indicates why training stopped (0=normal, 1=instability, 3=early stop)
+
+</details>
+
+<details>
+<summary>Deep-Dive Documentation</summary>
+
+Additional documentation in the `docs/` folder:
+
+| Document | Description |
+|----------|-------------|
+| [evolution_takeaways.md](docs/evolution_takeaways.md) | Detailed lessons learned from multiple evolutionary sweeps—how to set up evolution to discover specific architecture families. |
+| [gpu_run_plan.md](docs/gpu_run_plan.md) | Playbook for running evolution on GPU-rich machines (A100, 4090) with larger models (350M–1B params). |
+| [scale_policy.md](docs/scale_policy.md) | Soft priors and scaling policies for moving from laptop surrogates to production scale. |
+
+</details>
 
 <details>
 <summary>Operator Notes (Scale, Knobs, Ablations)</summary>
 
 ### Scale & portability
-The current phase runs on single-machine surrogates (~100 M parameters). To scale:
+The current phase runs on single-machine surrogates (~100 M parameters). To scale:
 1. Swap in a bigger spec in `configs/`.
 2. Keep `grad_ckpt` on.
 3. Re-tune `--score-weight-*` for production priorities.
@@ -276,7 +457,7 @@ The current phase runs on single-machine surrogates (~100 M parameters). To sc
 
 The NanoGPT speedrun record for training a 124M model to a target validation loss on FineWeb—typically on an 8×H100 pod—has improved rapidly (community reports went from ~45 minutes to under 3 minutes, with recent figures around ~2.3–2.9 minutes).
 
-So what: once we’re happy with local motif discovery, we can add an optional “speedrun-style” eval path that measures *time-to-target*/*tokens-to-target* under a fixed NanoGPT-like recipe, so architectures are judged on training efficiency (not just short-run perplexity).
+So what: once we're happy with local motif discovery, we can add an optional "speedrun-style" eval path that measures *time-to-target*/*tokens-to-target* under a fixed NanoGPT-like recipe, so architectures are judged on training efficiency (not just short-run perplexity).
 
 ### Sparse attention patterns
 The DSL supports `sparsity: none|sliding|block|local_global|dilated|local_block`.
@@ -297,5 +478,33 @@ Fit scaling-law priors from existing runs:
 ```bash
 python scripts/fit_scaling.py runs/<run_1>/frontier.json runs/<run_2>/frontier.json
 ```
+
+</details>
+
+<details>
+<summary>Run History & Evolution Log</summary>
+
+### Local Artifacts
+
+| Run | Config | Frontier Size | Notable Findings |
+|-----|--------|---------------|------------------|
+| `frontier_phi_seeded128` | `seed_xover-48-9237.yaml` (128 gens) | 25 | Shallow retro-heavy stacks; `ppl_code≈1.0` |
+| `frontier_phi_gated128` | `live_phi_tiny.yaml` (128 gens) | 1 | Deep (12 layers) but unstable |
+| `frontier_phi_entropy_v2` | `seed_xover-48-9237.yaml` (160 gens) | 99 | Balanced mix of shallow retro and deep MoE/SSM hybrids (up to 30 layers) |
+
+### Architecture Highlights (Historical)
+
+| Theme | What we learned |
+|-------|-----------------|
+| **Triple-retro loops** | Best single-block models carry three separate retro rails feeding the same residual |
+| **MoE + SSM hybrids** | 5–6 block stacks with dual MoE cores and Mamba SSMs reach ppl≈1.87 |
+| **Checkpoint pruning** | Old checkpoints are removed automatically; long sweeps no longer eat disk |
+
+### Historical Runs (Referenced in earlier versions)
+
+- `frontier_phi_creative_canon.json` – Composite objective + throughput experiments
+- `frontier_phi_creative_super_recur_mps.json` – Deep recurrence sweeps
+- `frontier_phi_promotion_mps.json` – Promotion rung experiments
+- Various Pareto/lexicase sweeps with diverse hybrids (MoE + SSM + retro + sparsity + recurrence)
 
 </details>
