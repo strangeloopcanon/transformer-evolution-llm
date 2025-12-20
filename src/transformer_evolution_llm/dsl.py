@@ -697,6 +697,10 @@ class DataConfig(BaseModel):
 
     tokenizer: str
     hf_revision: str = "main"
+    streaming: bool = Field(
+        default=True,
+        description="Use streaming datasets (avoids full downloads; requires network).",
+    )
     seq_len: int = Field(default=2048, gt=0)
     batch_size: int = Field(default=1, gt=0)
     workers: int = Field(default=2, ge=0)

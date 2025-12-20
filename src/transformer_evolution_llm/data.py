@@ -27,6 +27,7 @@ class DataModule:
         self.cfg = cfg
         self._seed = int(seed)
         self._rng = random.Random(self._seed)  # noqa: S311  # nosec B311 - deterministic batches
+        self._dataset_cache: dict[tuple[str, str, str, bool, str | None], object] = {}
         self.tokenizer = AutoTokenizer.from_pretrained(
             cfg.tokenizer,
             revision=cfg.hf_revision,
@@ -34,8 +35,15 @@ class DataModule:
         if not self.tokenizer.pad_token:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
-    def _load_streaming_dataset(self, shard: DatasetShard):
-        """Load a streaming dataset with backward-compatible shard.split parsing.
+    def reset_rng(self, seed: int | None = None) -> None:
+        """Reset deterministic shard sampling."""
+
+        if seed is not None:
+            self._seed = int(seed)
+        self._rng = random.Random(self._seed)  # noqa: S311  # nosec B311 - deterministic batches
+
+    def _load_dataset(self, shard: DatasetShard):
+        """Load a dataset (streaming or cached) with backward-compatible shard.split parsing.
 
         Supported shard.split formats:
         - "train" (regular split)
@@ -43,35 +51,50 @@ class DataModule:
         - "<config>:<split>" (explicit config + split)
         """
         revision = shard.revision or self.cfg.hf_revision
+        streaming = bool(getattr(self.cfg, "streaming", True))
         split_raw = str(shard.split or "train")
+        cache_dir = shard.cache_path or None
+        cache_key = (shard.name, split_raw, revision, streaming, cache_dir)
+        cached = self._dataset_cache.get(cache_key)
+        if cached is not None:
+            return cached
         if ":" in split_raw:
             cfg_name, split_name = split_raw.split(":", 1)
-            return load_dataset(  # nosec B615 - revision pinned via config
+            dataset = load_dataset(  # nosec B615 - revision pinned via config
                 shard.name,
                 cfg_name,
                 split=split_name,
-                streaming=True,
+                streaming=streaming,
                 revision=revision,
+                cache_dir=cache_dir,
             )
+            self._dataset_cache[cache_key] = dataset
+            return dataset
         try:
-            return load_dataset(  # nosec B615 - revision pinned via config
+            dataset = load_dataset(  # nosec B615 - revision pinned via config
                 shard.name,
                 split=split_raw,
-                streaming=True,
+                streaming=streaming,
                 revision=revision,
+                cache_dir=cache_dir,
             )
+            self._dataset_cache[cache_key] = dataset
+            return dataset
         except ValueError as exc:
             # Common case: configs historically used DatasetShard.split to store the dataset config
             # (e.g., wikitext-2-raw-v1). Detect and retry with a default split.
             msg = str(exc)
             if "Config name is missing" in msg or "available configs" in msg:
-                return load_dataset(  # nosec B615 - revision pinned via config
+                dataset = load_dataset(  # nosec B615 - revision pinned via config
                     shard.name,
                     split_raw,
                     split="train",
-                    streaming=True,
+                    streaming=streaming,
                     revision=revision,
+                    cache_dir=cache_dir,
                 )
+                self._dataset_cache[cache_key] = dataset
+                return dataset
             raise
 
     @dataclass
@@ -152,7 +175,7 @@ class DataModule:
                     return
 
     def _shard_iter(self, shard: DatasetShard) -> Iterable[TokenBatch]:
-        dataset = self._load_streaming_dataset(shard)
+        dataset = self._load_dataset(shard)
         tokenizer = self.tokenizer
         batch_size = max(1, int(self.cfg.batch_size))
         uids: list[str] = []
