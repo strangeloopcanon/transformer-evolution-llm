@@ -22,10 +22,17 @@ Recent phi-creative sweeps (Pareto-uniform + lexicase) spawned 54 frontier survi
 
 ## Signals we keep seeing (from current + prior runs)
 
-- Memory + sparsity synergize: local_global attention with short-horizon retro keeps KV modest while improving perplexity and long-recall.
-- Hybrids beat single tricks: MoE + SSM + retro consistently top quality when budgets allow; toggling SSM quantifies the throughput tax.
-- Budget gating matters: with promotion + higher rung budgets, deep hydras (MoE/SSM/retro) become competitive; without it, shallow retro stacks dominate.
-- Training takeaways: retro is the reliable horizon lever; MoE and SSM only pay off when budgets rise and promotion is on. Diversity pressure (graph entropy, novelty, layers/MoE objectives) prevents collapse into shallow retro spam.
+- Explicit memory is the most stable motif: when a long-context probe is in the objectives, survivors almost always carry memory primitives (retro + token/chunk/assoc variants) distributed across depth.
+- Capacity/routing motifs are conditional: MoE, selector sparsity, and alternate attention kernels show up only when rung0 gates + rung budgets are relaxed enough for them to “stay alive” long enough to train.
+- Depth re-use is a frequent path: recurrences appear as a cheap way to add effective depth under tight parameter/throughput budgets.
+- Selection pressure dominates outcomes: `map_elites` + an archive maintains multiple niches (memory-heavy vs MoE vs selector vs depth), while tighter gates/selection often collapses to a single regime.
+
+## So what (what this implies)
+
+- This loop is already a useful *architecture microscope*: at ~40–85 M params and a few hundred steps, it reliably rediscovers the same class of building blocks people reach by hand—explicit memory, routing/gating, and depth reuse—without baking in a named target architecture.
+- The frontier is a function of constraints: KV/throughput/params gates decide which regimes are even reachable; objective weights decide which motifs are rewarded; and parent selection decides whether niches persist long enough to improve.
+- The fact that memory primitives survive across runs suggests they’re “robustly learnable” under scarce-token training, whereas more exotic mixers are either (a) not yet incentivized by our eval, or (b) filtered out by gates/instability before they can pay off.
+- The right next proof is not “match a paper’s numbers”, but **convergent motifs + ablations**: multi-seed runs that converge on similar motifs, then short ablations showing which primitives actually drive the proxy gains.
 
 ## How constraints shape the frontier
 
@@ -97,17 +104,17 @@ Start your next run from `configs/seed_mutate_topk.yaml`; if you provided `--out
 <details>
 <summary>Long-context discovery run (Mac M4 / MPS)</summary>
 
-This is a disk-safe, local long-context probe run intended for motif discovery (not final scaling). It optimizes `passkey_loss` alongside short-run perplexity without hardcoding any specific module choices.
+This is a disk-safe, local long-context probe run intended for motif discovery (not final scaling). It optimizes `passkey_loss` alongside short-run perplexity without hardcoding any specific module choices. The `*_full_deck.yaml` variant matches the archived long-context frontier examples above; the `*_unbiased.yaml` variant is a tighter baseline with stricter gates.
 
 ```bash
 export TOKENIZERS_PARALLELISM=false
-RUN="runs/exp_longctx_unbiased_m4_$(date +%Y%m%d_%H%M%S)"
-HF_TOKEN="$HF_TOKEN" PYTHONPATH=src .venv/bin/python scripts/run_live.py configs/exp_longctx_overnight_m4_unbiased.yaml \
-  --device mps --generations 200 --steps 240 --eval-batches 4 --seed 4242 \
+RUN="runs/exp_longctx_full_deck_m4_$(date +%Y%m%d_%H%M%S)"
+HF_TOKEN="$HF_TOKEN" PYTHONPATH=src .venv/bin/python scripts/run_live.py configs/exp_longctx_overnight_m4_full_deck.yaml \
+  --device mps --generations 150 --steps 240 --eval-batches 4 --seed 4242 \
   --out "$RUN/frontier.json" --lineage-out "$RUN/frontier_lineage.json" --state-out "$RUN/frontier.state.json" \
-  --checkpoint-dir "$RUN/checkpoints" --mutation-steps 2 --prune-checkpoints-to-frontier
+  --checkpoint-dir "$RUN/checkpoints" --mutation-steps 3 --prune-checkpoints-to-frontier
 
-PYTHONPATH=src .venv/bin/python scripts/report_motifs.py "$RUN/frontier.json" --top 15
+PYTHONPATH=src .venv/bin/python scripts/report_motifs.py "$RUN/frontier.json" --lineage "$RUN/frontier_lineage.json" --top 15
 ```
 
 </details>
@@ -255,62 +262,65 @@ PYTHONPATH=src python scripts/run_live.py configs/seed_xover-48-9237.yaml \
 
 ### Discovered frontier architectures
 
-These are illustrative survivors from recent sweeps; they all use the same ~100 M–scale surrogate and live in the `runs/` JSONs so you can inspect or reseed them.
+These are illustrative survivors from the newest long‑context sweep (11‑entry Pareto frontier at ~40–85 M params), archived as YAML for easy inspection/reseeding.
 
-Note: older frontier JSONs may include non-causal surrogate metrics from before the next-token/causal-mask fix; treat those numbers as placeholders and rerun for meaningful PPL comparisons.
+Source (metrics + specs): `configs/frontiers/exp_longctx_full_deck_2h_m4_20251217_003818/frontier_arch.json` (generated from `configs/exp_longctx_overnight_m4_full_deck.yaml`).
 
-- **Expert‑ and selector‑rich frontier**  
-  Source: `runs/frontier_small_frontier_rich_strict_next2.json`, id `toggle_selector+dense_to_moe-6-21f3`.  
-  - Depth: 13 transformer blocks.  
-  - Experts: 6 MoE FFNs (32 experts, top‑k≈4, shared expert enabled).  
-  - Selectors: 7 attention blocks with DSA selectors (2–4 heads, top‑k≈64–96).  
-  - Memory: retro extras on 10 blocks (256 memory tokens, stride 32, gated aggregator).  
-  This is a “dense‑sparse‑memory” stack where most of the depth participates in routing or memory, not just a single special layer.
+- **Quality‑lean memory stack (best `ppl_code`)**  
+  Source: `configs/frontiers/exp_longctx_full_deck_2h_m4_20251217_003818/duplicate_block_span+toggle_kv_policy+add_extra_combo-292-4963.yaml`.  
+  - Depth: 5 blocks; Memory blocks: 5/5; MoE blocks: 1/5; KV policy: `window=1024` + `int8`.  
+  - Proxy metrics: `ppl_code≈121`, `passkey_loss≈7.79`.
 
 ```mermaid
 flowchart LR
-  E1[Embed] --> D1[Depth: 13 blocks]
-  D1 --> M1[MoE: 6 blocks]
-  D1 --> S1[Selectors: 7 blocks]
-  D1 --> R1[Retro extras: 10 blocks]
-  M1 --> O1[Head]
-  S1 --> O1
-  R1 --> O1
+  E1[Embed] --> D1[Depth: 5 blocks]
+  D1 --> R1[Memory: 5/5 blocks]
+  D1 --> M1[MoE: 1/5 blocks]
+  D1 --> K1[KV policy: window=1024 int8]
+  R1 --> O1[Head]
+  M1 --> O1
+  K1 --> O1
 ```
 
-- **Memory‑heavy frontier (“hydra” regime)**  
-  Source: `runs/frontier_memory_frontier.json`.  
-  - Balanced long‑memory candidate: id `tune_retro+insert_retro_module-7-87f0`  
-    - Depth: 12 blocks; Experts: 5 MoE; Selectors: 6; Memory blocks: 8; Recurrences: 4.  
-  - High‑capacity hydra candidate: id `xover-9-9b09`  
-    - Depth: 18 blocks; Experts: 8 MoE; Selectors: 9; Memory blocks: 10; Recurrences: 3.  
-    - Metrics: slightly worse perplexity but very high structural capacity, useful as a design probe.  
-  Together these show what happens when gates, mutation weights, and score weights are tuned toward “lots of memory and recurrence spread across depth” rather than pure throughput.
+- **Probe‑lean hybrid (best `passkey_loss`)**  
+  Source: `configs/frontiers/exp_longctx_full_deck_2h_m4_20251217_003818/duplicate_block_span+toggle_qk_norm+add_extra_combo-91-10b3.yaml`.  
+  - Depth: 10 blocks; Memory blocks: 4/10; Recurrences: 1; MLA blocks: 2/10; Selector blocks: 2/10; QK‑norm blocks: 1/10.  
+  - Proxy metrics: `passkey_loss≈5.43`, `ppl_code≈194`.
 
 ```mermaid
 flowchart LR
-  E2[Embed] --> D2[Depth: 12 blocks]
-  D2 --> M2[MoE: 5 blocks]
-  D2 --> S2[Selectors: 6 blocks]
-  D2 --> R2[Memory blocks: 8]
-  D2 --> C2[Recurrences: 4]
-  M2 --> O2[Head]
+  E2[Embed] --> D2[Depth: 10 blocks]
+  D2 --> R2[Memory: 4/10 blocks]
+  D2 --> A2[Alt attn: MLA 2/10]
+  D2 --> S2[Selectors: 2/10]
+  D2 --> C2[Recurrence spans: 1]
+  D2 --> Q2[QK-norm: 1/10]
+  R2 --> O2[Head]
+  A2 --> O2
   S2 --> O2
-  R2 --> O2
   C2 --> O2
+  Q2 --> O2
 ```
+
+- **Deeper routed memory stack (balanced quality)**  
+  Source: `configs/frontiers/exp_longctx_full_deck_2h_m4_20251217_003818/insert_assoc_memory+tune_retro+tune_branch_router-375-1123.yaml`.  
+  - Depth: 13 blocks; Memory blocks: 4/13; MLA blocks: 1/13; Extras: assoc‑memory + branch‑router + layer‑scale.  
+  - Proxy metrics: `ppl_code≈124`, `passkey_loss≈7.52`.
 
 ```mermaid
 flowchart LR
-  E3[Embed] --> D3[Depth: 18 blocks]
-  D3 --> M3[MoE: 8 blocks]
-  D3 --> S3[Selectors: 9 blocks]
-  D3 --> R3[Memory blocks: 10]
-  D3 --> C3[Recurrences: 3]
-  M3 --> O3[Head]
-  S3 --> O3
-  R3 --> O3
-  C3 --> O3
+  E3[Embed] --> D3[Depth: 13 blocks]
+  D3 --> R3[Memory: 4/13 blocks]
+  D3 --> A3[Alt attn: MLA 1/13]
+  D3 --> X3[Routing/stability extras]
+  X3 --> BR3[Branch router]
+  X3 --> AM3[Assoc memory]
+  X3 --> LS3[LayerScale]
+  R3 --> O3[Head]
+  A3 --> O3
+  BR3 --> O3
+  AM3 --> O3
+  LS3 --> O3
 ```
 
 ### Ablation harness
@@ -318,7 +328,8 @@ flowchart LR
 Probe how much each motif matters for a frontier winner:
 
 ```bash
-python scripts/run_ablation.py runs/frontier_phi_creative_overnight_lexi.json \
+python scripts/run_ablation.py \
+  configs/frontiers/exp_longctx_full_deck_2h_m4_20251217_003818/frontier_arch.json \
   --top-n 2 --device mps --steps 60 --ablation retro_off --ablation kv_groups_to_dense
 ```
 
