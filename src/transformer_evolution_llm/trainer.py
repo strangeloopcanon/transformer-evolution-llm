@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import gc
+import json as std_json
 import math
 import time
 from collections.abc import Iterable
@@ -55,6 +57,7 @@ class FullWeightTrainer:
         self.instability_threshold = instability_threshold
         self.no_improve_patience = no_improve_patience
         self.improvement_tolerance = improvement_tolerance
+        self._eval_module_cache: dict[str, DataModule] = {}
 
     def _checkpoint_torch_dtype(self) -> torch.dtype:
         key = (self.checkpoint_dtype or "fp16").lower()
@@ -273,7 +276,13 @@ class FullWeightTrainer:
             eval_cfg.healing_shards = []
             eval_cfg.healing_tokens = None
             seed_val = int(getattr(spec.train, "seed", 0) or 0)
-            eval_module = DataModule(eval_cfg, seed=seed_val + 1)
+            cache_key = std_json.dumps(eval_cfg.model_dump(mode="python"), sort_keys=True)
+            cache_key = f"{seed_val + 1}:{cache_key}"
+            eval_module = self._eval_module_cache.get(cache_key)
+            if eval_module is None:
+                eval_module = DataModule(eval_cfg, seed=seed_val + 1)
+                self._eval_module_cache[cache_key] = eval_module
+            eval_module.reset_rng(seed_val + 1)
             ppl_eval = self._evaluate_perplexity(
                 model,
                 spec,
@@ -285,7 +294,9 @@ class FullWeightTrainer:
         passkey_metrics = self._passkey_probe(model, spec)
         long_recall = float(passkey_metrics.get("passkey_acc", long_recall_proxy))
         checkpoint_path = self.checkpoint_dir / f"{candidate.ident}.pt"
-        torch.save(self._checkpoint_state(model), checkpoint_path)
+        state = self._checkpoint_state(model)
+        torch.save(state, checkpoint_path)
+        del state
         # Aggregate router telemetry
         router_entropy = 0.0
         router_lb = 0.0
@@ -369,7 +380,26 @@ class FullWeightTrainer:
         metrics.update(passkey_metrics)
         if spec.model.recurrences:
             metrics.update(self._recurrence_evaluations(model, spec, batch_iter, criterion))
-        return metrics, checkpoint_path
+        result = (metrics, checkpoint_path)
+        # Best-effort cleanup to prevent allocator growth across many candidates.
+        del parent_state
+        del optimizer
+        del criterion
+        del model
+        gc.collect()
+        if (
+            self.device.type == "cuda"
+            and torch.backends.cuda.is_built()
+            and torch.cuda.is_available()
+        ):
+            torch.cuda.empty_cache()
+        if (
+            self.device.type == "mps"
+            and hasattr(torch, "mps")
+            and hasattr(torch.mps, "empty_cache")
+        ):
+            torch.mps.empty_cache()
+        return result
 
     def _recurrence_schedule(
         self, spec: ArchitectureSpec, step_idx: int, total_steps: int
